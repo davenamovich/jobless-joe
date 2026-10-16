@@ -1,0 +1,100 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+/// A single generated Jobless Joe song episode, with all its companion outputs.
+model Episode {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+
+  /// The selected theme key (e.g. "joe-discovers-ai") OR "custom"
+  episodeTheme  String
+  /// Display label of the chosen theme
+  episodeLabel  String
+  /// If user typed a custom topic, it lives here
+  customTopic   String?
+
+  /// Selected song duration: 15s / 30s / 60s / 90s / 120s
+  duration      String
+  /// Comedy intensity: dry-wit / deadpan / ridiculous / savage-roast / unhinged
+  intensity     String
+  /// Target audience key
+  target        String
+
+  /// Which action produced this episode (generate / funnier / sharper / attitude / bigger-ending / thirty-ad / continue / alt-hooks)
+  action        String
+
+  /// Episode title shown to user (e.g. "Joe Discovers AI")
+  title         String
+  /// The full song output serialized as JSON
+  output        String
+
+  /// Short teaser line shown on cards
+  teaser        String
+  /// Suggested next episode title
+  nextTitle     String
+
+  /// Optional reference to a previous episode when continuing a story
+  previousId    String?
+
+  @@index([createdAt])
+}
+
+/// A single growing Story Bible. Only one row exists at id = "current".
+model StoryBible {
+  id                    String   @id @default("current")
+  updatedAt             DateTime @updatedAt
+
+  /// Joe's current situation in the story (1-3 sentences)
+  currentSituation      String
+
+  /// JSON array of skills Joe has learned so far
+  learnedSkills         String   // "[]"
+
+  /// JSON array of things Joe has built or made
+  builtThings           String   // "[]"
+
+  /// JSON array of recurring character names + short traits
+  characters            String   // "[]"
+
+  /// JSON array of running jokes
+  runningJokes          String   // "[]"
+
+  /// JSON array of past punchlines worth remembering
+  previousPunchlines    String   // "[]"
+
+  /// JSON array of unresolved story threads to revisit
+  unresolvedStorylines String   // "[]"
+
+  /// Next planned development hint
+  nextDevelopment       String
+
+  /// Total episodes produced so far
+  episodeCount          Int      @default(0)
+}
