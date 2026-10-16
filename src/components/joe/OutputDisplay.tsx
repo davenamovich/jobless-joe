@@ -1,8 +1,16 @@
 "use client";
 
+import { useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Clapperboard,
@@ -11,19 +19,62 @@ import {
   Flame,
   Music,
   Quote,
+  Send,
   Sparkles,
   Type,
   Video,
 } from "lucide-react";
 import { LyricsView } from "./LyricsView";
 import type { SongOutput } from "@/lib/joe-prompts";
+import type { WallSummary } from "@/lib/walls";
 import { toast } from "sonner";
 
 interface Props {
   output: SongOutput;
+  episodeId?: string;
+  walls: WallSummary[];
+  activeWallId: string | null;
+  onSetActiveWall: (id: string) => void;
+  onSendToWall: (episodeId: string, wallId: string) => Promise<void>;
 }
 
-export function OutputDisplay({ output }: Props) {
+export function OutputDisplay({
+  output,
+  episodeId,
+  walls,
+  activeWallId,
+  onSetActiveWall,
+  onSendToWall,
+}: Props) {
+  const [sending, setSending] = useState(false);
+  const [targetWallId, setTargetWallId] = useState<string>(activeWallId ?? "");
+
+  // Keep local selector in sync if the active wall changes elsewhere.
+  // (We deliberately don't re-sync after the user picks a different target
+  // here — that's the point of having a separate "send to" selector.)
+  const effectiveTarget = targetWallId || activeWallId || walls[0]?.id || "";
+
+  const handleSend = async () => {
+    if (!episodeId) {
+      toast.error("Episode is still saving. Try again in a moment.");
+      return;
+    }
+    if (!effectiveTarget) {
+      toast.error("Pick a wall first.");
+      return;
+    }
+    setSending(true);
+    try {
+      await onSendToWall(episodeId, effectiveTarget);
+      toast.success("Sent to wall.");
+    } catch (e) {
+      console.error(e);
+      toast.error("Couldn't send to wall.");
+    } finally {
+      setSending(false);
+    }
+  };
+
   return (
     <Tabs defaultValue="song" className="w-full">
       <TabsList className="grid w-full grid-cols-3 md:grid-cols-5 h-auto">
@@ -61,6 +112,45 @@ export function OutputDisplay({ output }: Props) {
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* === SEND TO WALL === */}
+            <div className="rounded-lg border border-primary/30 bg-primary/5 p-3 flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 text-primary text-xs uppercase tracking-wider font-semibold">
+                <Send className="h-3.5 w-3.5" />
+                Send to Wall
+              </div>
+              <Select
+                value={effectiveTarget}
+                onValueChange={(v) => {
+                  setTargetWallId(v);
+                  onSetActiveWall(v);
+                }}
+              >
+                <SelectTrigger className="h-8 w-auto min-w-[160px] text-sm bg-card">
+                  <SelectValue placeholder="Pick a wall" />
+                </SelectTrigger>
+                <SelectContent>
+                  {walls.map((w) => (
+                    <SelectItem key={w.id} value={w.id}>
+                      <span className="mr-1.5">{w.emoji}</span>
+                      {w.name}
+                      <span className="ml-2 text-[0.65rem] text-muted-foreground">
+                        ({w.itemCount})
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                className="h-8 ml-auto"
+                onClick={handleSend}
+                disabled={sending || !episodeId || !effectiveTarget}
+              >
+                <Send className="h-3.5 w-3.5 mr-1.5" />
+                {sending ? "Sending…" : "Send to Wall"}
+              </Button>
+            </div>
+
             {output.musicalDirection && (
               <div className="rounded-lg border border-border/60 bg-secondary/30 p-3">
                 <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
