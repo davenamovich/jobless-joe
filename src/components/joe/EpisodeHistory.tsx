@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
 import { Clock, History, Music4 } from "lucide-react";
+import { getCroonerStyle } from "@/lib/crooner-styles";
 
 export interface EpisodeListItem {
   id: string;
@@ -14,6 +15,9 @@ export interface EpisodeListItem {
   duration: string;
   intensity: string;
   target: string;
+  croonerStyle?: string;
+  backend?: string;
+  backendModel?: string | null;
   action: string;
   title: string;
   teaser: string;
@@ -61,44 +65,63 @@ export function EpisodeHistory({ episodes, onSelect, selectedId }: Props) {
         </div>
         <ScrollArea className="h-[420px]">
           <ul className="divide-y divide-border/50">
-            {episodes.map((ep) => (
-              <li
-                key={ep.id}
-                className={`px-4 py-3 cursor-pointer transition-colors ${
-                  selectedId === ep.id ? "bg-primary/5" : "hover:bg-secondary/40"
-                }`}
-                onClick={() => onSelect?.(ep.id)}
-              >
-                <div className="flex items-baseline justify-between gap-2 mb-1">
-                  <p className="font-serif text-sm font-semibold leading-tight line-clamp-2">
-                    {ep.title}
-                  </p>
-                  <span className="text-[0.7rem] text-muted-foreground shrink-0 flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {formatDistanceToNow(new Date(ep.createdAt), {
-                      addSuffix: true,
-                    })}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
-                  <Badge variant="secondary" className="text-[0.65rem] font-normal">
-                    {ep.duration}
-                  </Badge>
-                  <Badge variant="outline" className="text-[0.65rem] font-normal">
-                    {INTENSITY_LABELS[ep.intensity] ?? ep.intensity}
-                  </Badge>
-                  <Badge variant="outline" className="text-[0.65rem] font-normal">
-                    {ep.action}
-                  </Badge>
-                </div>
-                {ep.closingLine && (
-                  <p className="text-xs text-muted-foreground italic line-clamp-2 flex items-start gap-1.5">
-                    <Music4 className="h-3 w-3 mt-0.5 shrink-0" />
-                    “{ep.closingLine}”
-                  </p>
-                )}
-              </li>
-            ))}
+            {episodes.map((ep) => {
+              const style = getCroonerStyle(ep.croonerStyle);
+              return (
+                <li
+                  key={ep.id}
+                  className={`px-4 py-3 cursor-pointer transition-colors ${
+                    selectedId === ep.id ? "bg-primary/5" : "hover:bg-secondary/40"
+                  }`}
+                  onClick={() => onSelect?.(ep.id)}
+                >
+                  <div className="flex items-baseline justify-between gap-2 mb-1">
+                    <p className="font-serif text-sm font-semibold leading-tight line-clamp-2">
+                      {ep.title}
+                    </p>
+                    <span className="text-[0.7rem] text-muted-foreground shrink-0 flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatDistanceToNow(new Date(ep.createdAt), {
+                        addSuffix: true,
+                      })}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                    <Badge variant="secondary" className="text-[0.65rem] font-normal">
+                      {ep.duration}
+                    </Badge>
+                    <Badge variant="outline" className="text-[0.65rem] font-normal">
+                      {INTENSITY_LABELS[ep.intensity] ?? ep.intensity}
+                    </Badge>
+                    <Badge variant="outline" className="text-[0.65rem] font-normal">
+                      {ep.action}
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="text-[0.65rem] font-normal border-primary/30 text-primary"
+                      title={style.description}
+                    >
+                      {style.emoji} {style.label}
+                    </Badge>
+                    {ep.backend && ep.backend !== "zai" && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.6rem] font-mono font-normal text-muted-foreground"
+                        title={`Backend: ${ep.backend} · Model: ${ep.backendModel || "unknown"}`}
+                      >
+                        {ep.backendModel || ep.backend}
+                      </Badge>
+                    )}
+                  </div>
+                  {ep.closingLine && (
+                    <p className="text-xs text-muted-foreground italic line-clamp-2 flex items-start gap-1.5">
+                      <Music4 className="h-3 w-3 mt-0.5 shrink-0" />
+                      “{ep.closingLine}”
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </ScrollArea>
       </CardContent>

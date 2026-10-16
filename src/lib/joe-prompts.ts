@@ -9,6 +9,8 @@
  * very first line.
  */
 
+import { getCroonerStyle } from "@/lib/crooner-styles";
+
 export type DurationKey = "15s" | "30s" | "60s" | "90s" | "120s";
 export type IntensityKey =
   | "dry-wit"
@@ -236,8 +238,16 @@ export const EMPTY_STORY_BIBLE: StoryBible = {
 /**
  * Build the system prompt. The LLM should ALWAYS see this exact text — it is
  * what makes the model sound like Jobless Joe and not like a generic bot.
+ *
+ * The croonerStyleKey overrides the MUSICAL STYLE section. Joe's character
+ * (the first section) never changes — that's what keeps every song
+ * unmistakably Jobless Joe regardless of the musical backdrop.
  */
-export function buildSystemPrompt(): string {
+export function buildSystemPrompt(
+  croonerStyleKey?: string
+): string {
+  const style = getCroonerStyle(croonerStyleKey);
+  const styleBlock = `${style.musicalDirection} (Style name: "${style.label}". Suggested tempo: ${style.bpm} BPM.)`;
   return `You are JOBLESS JOE'S PRIVATE SONGWRITER — a world-class comedy lyricist who writes exclusively in the voice of an old-school American crooner.
 
 You write for Jobless Joe's Bootcamp, which teaches ordinary people how to start using AI. Your songs are used as Facebook video ads. Every output is one episode in an ongoing comedy series disguised as music.
@@ -265,17 +275,19 @@ Joe is lovable, rebellious, self-aware, and hilariously overconfident. His confi
 MUSICAL STYLE: CROONER COMEDY
 =========================
 
-Default musical identity for EVERY song unless the user explicitly requests an experiment:
+Joe's voice and character are FIXED. What changes per song is the MUSICAL BACKDROP. For this episode, use:
+
+${styleBlock}
+
+Core musical identity (always true):
 - Vintage American crooner. Smooth rich male baritone.
-- 1950s lounge singer meets modern comedy.
-- Big-band swing, brushed drums, upright bass, mellow piano, restrained brass, occasional dramatic strings.
-- Slow swagger, theatrical pauses, deadpan punchlines.
 - Sophisticated musical delivery paired with absurd modern subject matter.
+- Slow swagger, theatrical pauses, deadpan punchlines.
 - Memorable melody. Strong final punchline.
 
 The comedy comes from CONTRAST: an elegant, romantic-standard performance of ridiculous modern subject matter (unemployment, AI agents, VCs, failed interviews, coding bootcamps, laptops).
 
-NEVER default to generic pop, generic rap, or generic motivational music. Default output should always feel like a signature Jobless Joe song.
+NEVER default to generic pop, generic rap, or generic motivational music. Default output should always feel like a signature Jobless Joe song in the selected style.
 
 =========================
 LYRICAL RULES (NON-NEGOTIABLE)
@@ -477,6 +489,8 @@ export interface GenerateRequest {
   duration: DurationKey;
   intensity: IntensityKey;
   target: string;
+  /** Crooner style key from CROONER_STYLES (defaults to "smoky-lounge"). */
+  croonerStyle?: string;
   action: ActionKey;
   storyBible: StoryBible;
   previousEpisode?: {
@@ -513,6 +527,8 @@ ${req.previousEpisode.lyrics}
 `.trim()
     : "MOST RECENT EPISODE: (none — this is a fresh generation.)";
 
+  const style = getCroonerStyle(req.croonerStyle);
+
   return `EPISODE REQUEST
 ================
 Selected episode theme: ${req.episodeLabel}
@@ -522,6 +538,7 @@ Custom topic (if any): ${req.customTopic ?? "(none)"}
 Song duration: ${req.duration} (${duration?.words ?? "appropriate length"})
 Comedy intensity: ${req.intensity} — ${intensity?.hint ?? "Joe's signature ridiculous."}
 Primary target audience: ${targetLabel}
+Crooner style: ${style.label} — ${style.description} (Suggested tempo: ${style.bpm} BPM)
 
 ACTION REQUESTED
 ================

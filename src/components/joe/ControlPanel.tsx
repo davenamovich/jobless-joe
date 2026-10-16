@@ -41,6 +41,7 @@ import {
   type DurationKey,
   type IntensityKey,
 } from "@/lib/joe-prompts";
+import { CROONER_STYLES } from "@/lib/crooner-styles";
 
 interface Props {
   episodeKey: string;
@@ -53,6 +54,8 @@ interface Props {
   setIntensity: (v: IntensityKey) => void;
   target: string;
   setTarget: (v: string) => void;
+  croonerStyle: string;
+  setCroonerStyle: (v: string) => void;
   onAction: (action: ActionKey) => void;
   isLoading: boolean;
   hasEpisode: boolean;
@@ -70,12 +73,15 @@ export function ControlPanel(props: Props) {
     setIntensity,
     target,
     setTarget,
+    croonerStyle,
+    setCroonerStyle,
     onAction,
     isLoading,
     hasEpisode,
   } = props;
 
   const isCustom = episodeKey === "custom";
+  const activeStyle = CROONER_STYLES.find((s) => s.key === croonerStyle);
 
   return (
     <Card className="overflow-hidden border-border/70 shadow-sm">
@@ -196,6 +202,46 @@ export function ControlPanel(props: Props) {
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <Separator />
+
+        {/* CROONER STYLE */}
+        <div className="space-y-2">
+          <SectionLabel icon={<Music className="h-3.5 w-3.5" />}>
+            Crooner style
+          </SectionLabel>
+          <Select value={croonerStyle} onValueChange={setCroonerStyle}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Pick a crooner style" />
+            </SelectTrigger>
+            <SelectContent>
+              <ScrollArea className="h-[280px]">
+                {CROONER_STYLES.map((s) => (
+                  <SelectItem key={s.key} value={s.key}>
+                    <div className="flex flex-col py-0.5">
+                      <span className="flex items-center gap-1.5">
+                        <span className="text-base">{s.emoji}</span>
+                        <span className="font-medium">{s.label}</span>
+                        <span className="ml-auto text-[0.65rem] text-muted-foreground">
+                          {s.bpm} BPM
+                        </span>
+                      </span>
+                      <span className="text-[0.7rem] text-muted-foreground leading-tight">
+                        {s.description}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </ScrollArea>
+            </SelectContent>
+          </Select>
+          {activeStyle && (
+            <p className="text-[0.7rem] text-muted-foreground italic leading-relaxed">
+              {activeStyle.emoji} {activeStyle.label} — Joe's character stays the
+              same, the musical backdrop shifts.
+            </p>
+          )}
         </div>
 
         <Separator />
@@ -322,11 +368,15 @@ export function CurrentSelectionChips({
   duration,
   intensityLabel,
   targetLabel,
+  croonerStyleLabel,
+  croonerStyleEmoji,
 }: {
   episodeLabel: string;
   duration: string;
   intensityLabel: string;
   targetLabel: string;
+  croonerStyleLabel?: string;
+  croonerStyleEmoji?: string;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -346,6 +396,15 @@ export function CurrentSelectionChips({
         <Target className="h-3 w-3 mr-1" />
         {targetLabel}
       </Badge>
+      {croonerStyleLabel && (
+        <Badge
+          variant="outline"
+          className="font-normal border-primary/40 text-primary"
+        >
+          <span className="mr-1">{croonerStyleEmoji || "🎵"}</span>
+          {croonerStyleLabel}
+        </Badge>
+      )}
     </div>
   );
 }

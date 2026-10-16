@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 import {
   ACTIONS,
@@ -15,6 +14,8 @@ import {
   type SongOutput,
   type StoryBible,
 } from "@/lib/joe-prompts";
+import { CROONER_STYLES } from "@/lib/crooner-styles";
+import { chat, loadBackendConfig } from "@/lib/ai-backend";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -26,6 +27,7 @@ interface GenerateBody {
   duration: DurationKey;
   intensity: IntensityKey;
   target: string;
+  croonerStyle?: string;
   action: ActionKey;
 }
 
@@ -195,12 +197,16 @@ export async function POST(req: NextRequest) {
   if (!TARGETS.some((t) => t.key === body.target)) {
     return NextResponse.json({ error: "Unknown target audience." }, { status: 400 });
   }
+  const croonerStyleKey =
+    body.croonerStyle && CROONER_STYLES.some((s) => s.key === body.croonerStyle)
+      ? body.croonerStyle!
+      : "smoky-lounge";
 
   const storyBible = await loadStoryBible();
   const previousEpisode =
     body.action === "generate" ? null : await loadLastEpisode();
 
-  const systemPrompt = buildSystemPrompt();
+  const systemPrompt = buildSystemPrompt(croonerStyleKey);
   const userPrompt = buildUserPrompt({
     episodeKey: body.episodeKey,
     episodeLabel: body.episodeLabel,
@@ -208,36 +214,31 @@ export async function POST(req: NextRequest) {
     duration: body.duration,
     intensity: body.intensity,
     target: body.target,
+    croonerStyle: croonerStyleKey,
     action: body.action,
     storyBible,
     previousEpisode,
   });
 
-  let zai: Awaited<ReturnType<typeof ZAI.create>>;
-  try {
-    zai = await ZAI.create();
-  } catch (e) {
-    console.error("ZAI init failed", e);
-    return NextResponse.json(
-      { error: "AI backend failed to initialize." },
-      { status: 500 }
-    );
-  }
+  // === Pick the AI backend (Z.ai default, or OpenAI-compatible for local /
+  // ngrok-hosted models like Ace 1.5). ===
+  const backendCfg = await loadBackendConfig();
 
   let raw = "";
+  let usedModel = "";
+  let usedBackend = "zai";
   try {
-    const completion = await zai.chat.completions.create({
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      thinking: { type: "disabled" },
-    });
-    raw = completion.choices[0]?.message?.content ?? "";
+    const result = await chat(systemPrompt, userPrompt, backendCfg);
+    raw = result.content;
+    usedModel = result.model;
+    usedBackend = result.backend;
   } catch (e) {
-    console.error("ZAI completion failed", e);
+    console.error("Backend chat failed", e);
+    const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json(
-      { error: "The crooner lost his voice. Please try again." },
+      {
+        error: `The crooner lost his voice (${backendCfg.activeBackend}): ${msg}`,
+      },
       { status: 502 }
     );
   }
@@ -280,6 +281,9 @@ export async function POST(req: NextRequest) {
         duration: body.duration,
         intensity: body.intensity,
         target: body.target,
+        croonerStyle: croonerStyleKey,
+        backend: usedBackend,
+        backendModel: usedModel || null,
         action: body.action,
         title: cleaned.episodeTitle,
         output: JSON.stringify(cleaned),
@@ -297,5 +301,8 @@ export async function POST(req: NextRequest) {
       ...cleaned.storyBibleUpdate,
       episodeCount: newEpisodeCount,
     },
+    backend: usedBackend,
+    model: usedModel,
+    croonerStyle: croonerStyleKey,
   });
 }

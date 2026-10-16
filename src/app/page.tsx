@@ -19,6 +19,7 @@ import { EpisodeHistory, type EpisodeListItem } from "@/components/joe/EpisodeHi
 import { MicLoader } from "@/components/joe/MicLoader";
 import { OutputDisplay } from "@/components/joe/OutputDisplay";
 import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
+import { SettingsDialog } from "@/components/joe/SettingsDialog";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
 import { WallManager } from "@/components/joe/WallManager";
 import {
@@ -30,6 +31,7 @@ import {
   type SongOutput,
   type StoryBible,
 } from "@/lib/joe-prompts";
+import { CROONER_STYLES, getCroonerStyle } from "@/lib/crooner-styles";
 import type {
   WallSummary,
   WallWithItems,
@@ -51,6 +53,31 @@ export default function Home() {
   const [duration, setDuration] = useState<DurationKey>("60s");
   const [intensity, setIntensity] = useState<IntensityKey>("ridiculous");
   const [target, setTarget] = useState<string>("ai-curious");
+  const [croonerStyle, setCroonerStyle] = useState<string>("smoky-lounge");
+
+  // === Backend status (shown in header) ===
+  const [backendInfo, setBackendInfo] = useState<{
+    activeBackend: string;
+    openaiModel: string;
+  } | null>(null);
+
+  const refreshBackendInfo = useCallback(async () => {
+    try {
+      const res = await fetch("/api/backend/config", { cache: "no-store" });
+      if (!res.ok) return;
+      const j = await res.json();
+      setBackendInfo({
+        activeBackend: j.config?.activeBackend ?? "zai",
+        openaiModel: j.config?.openaiModel ?? "",
+      });
+    } catch (e) {
+      console.error("Backend config fetch failed", e);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshBackendInfo();
+  }, [refreshBackendInfo]);
 
   // === Output state ===
   const [output, setOutput] = useState<SongOutput | null>(null);
@@ -294,6 +321,7 @@ export default function Home() {
             duration,
             intensity,
             target,
+            croonerStyle,
             action,
           }),
         });
@@ -325,7 +353,7 @@ export default function Home() {
         setIsLoading(false);
       }
     },
-    [episodeKey, customTopic, duration, intensity, target]
+    [episodeKey, customTopic, duration, intensity, target, croonerStyle]
   );
 
   // === Pick a historical episode to view ===
@@ -343,7 +371,11 @@ export default function Home() {
 
   return (
     <div className="min-h-screen flex flex-col lounge-bg">
-      <Header storyBible={storyBible} />
+      <Header
+        storyBible={storyBible}
+        backendInfo={backendInfo}
+        onConfigChanged={refreshBackendInfo}
+      />
 
       <main className="flex-1 w-full max-w-[1500px] mx-auto px-4 md:px-6 py-6 md:py-8">
         {/* Selection chips */}
@@ -359,6 +391,8 @@ export default function Home() {
               INTENSITIES.find((i) => i.key === intensity)?.label ?? intensity
             }
             targetLabel={target}
+            croonerStyleLabel={getCroonerStyle(croonerStyle).label}
+            croonerStyleEmoji={getCroonerStyle(croonerStyle).emoji}
           />
         </div>
 
@@ -376,6 +410,8 @@ export default function Home() {
               setIntensity={setIntensity}
               target={target}
               setTarget={setTarget}
+              croonerStyle={croonerStyle}
+              setCroonerStyle={setCroonerStyle}
               onAction={handleAction}
               isLoading={isLoading}
               hasEpisode={!!output}
@@ -473,7 +509,22 @@ export default function Home() {
 // Sub-components
 // ----------------------------------------------------------------------------
 
-function Header({ storyBible }: { storyBible: StoryBible | null }) {
+function Header({
+  storyBible,
+  backendInfo,
+  onConfigChanged,
+}: {
+  storyBible: StoryBible | null;
+  backendInfo: {
+    activeBackend: string;
+    openaiModel: string;
+  } | null;
+  onConfigChanged: () => void;
+}) {
+  const backendLabel =
+    backendInfo?.activeBackend === "openai-compat"
+      ? `OpenAI-compat · ${backendInfo.openaiModel || "(no model)"}`
+      : "Z.ai";
   return (
     <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/65">
       <div className="max-w-[1500px] mx-auto px-4 md:px-6 py-3 flex items-center gap-3">
@@ -500,6 +551,14 @@ function Header({ storyBible }: { storyBible: StoryBible | null }) {
               · {storyBible.characters.length} characters
             </span>
           )}
+          <span
+            className="text-[0.65rem] font-mono px-2 py-0.5 rounded-full border border-border/60 bg-secondary/40 text-muted-foreground"
+            title="Active AI backend"
+          >
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 mr-1 align-middle" />
+            {backendLabel}
+          </span>
+          <SettingsDialog onConfigChanged={onConfigChanged} />
           <a
             href="https://www.plunderandriffle.com/joblessjoe"
             target="_blank"
