@@ -1,0 +1,363 @@
+"use client";
+
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Clapperboard,
+  Copy,
+  Film,
+  Flame,
+  Music,
+  Quote,
+  Sparkles,
+  Type,
+  Video,
+} from "lucide-react";
+import { LyricsView } from "./LyricsView";
+import type { SongOutput } from "@/lib/joe-prompts";
+import { toast } from "sonner";
+
+interface Props {
+  output: SongOutput;
+}
+
+export function OutputDisplay({ output }: Props) {
+  return (
+    <Tabs defaultValue="song" className="w-full">
+      <TabsList className="grid w-full grid-cols-3 md:grid-cols-5 h-auto">
+        <TabsTrigger value="song" className="py-2">
+          <Music className="h-3.5 w-3.5 mr-1.5" /> Song
+        </TabsTrigger>
+        <TabsTrigger value="hooks" className="py-2">
+          <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Hooks
+        </TabsTrigger>
+        <TabsTrigger value="ad" className="py-2">
+          <Type className="h-3.5 w-3.5 mr-1.5" /> Ad Copy
+        </TabsTrigger>
+        <TabsTrigger value="video" className="py-2">
+          <Film className="h-3.5 w-3.5 mr-1.5" /> Video
+        </TabsTrigger>
+        <TabsTrigger value="next" className="py-2">
+          <Flame className="h-3.5 w-3.5 mr-1.5" /> Next
+        </TabsTrigger>
+      </TabsList>
+
+      {/* ============================ SONG ============================ */}
+      <TabsContent value="song" className="mt-4 space-y-4">
+        <Card className="spotlight">
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-baseline gap-2 justify-between">
+              <CardTitle className="font-serif text-2xl md:text-3xl marquee-line">
+                {output.episodeTitle}
+              </CardTitle>
+              <div className="flex flex-wrap gap-2">
+                {output.duration && <Badge variant="secondary">{output.duration}</Badge>}
+                <Badge variant="outline" className="font-mono text-[0.7rem]">
+                  CROONER · BIG-BAND SWING
+                </Badge>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {output.musicalDirection && (
+              <div className="rounded-lg border border-border/60 bg-secondary/30 p-3">
+                <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
+                  <Clapperboard className="h-3.5 w-3.5" /> Musical Direction
+                </p>
+                <p className="text-sm text-foreground/90 leading-relaxed">
+                  {output.musicalDirection}
+                </p>
+              </div>
+            )}
+            <LyricsView lyrics={output.lyrics} />
+
+            {output.closingLine && (
+              <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-4">
+                <p className="text-xs uppercase tracking-wider text-primary mb-1 flex items-center gap-1.5">
+                  <Quote className="h-3.5 w-3.5" /> Closing Line
+                </p>
+                <p className="font-serif italic text-lg text-foreground">
+                  “{output.closingLine}”
+                </p>
+              </div>
+            )}
+
+            {output.performanceNotes && (
+              <div>
+                <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1">
+                  Performance Notes
+                </p>
+                <p className="text-sm text-foreground/80 leading-relaxed">
+                  {output.performanceNotes}
+                </p>
+              </div>
+            )}
+
+            <CopyButton
+              label="Copy lyrics"
+              value={`${output.episodeTitle}\n${"=".repeat(output.episodeTitle.length)}\n\n${output.lyrics}\n\n— Closing line: ${output.closingLine}`}
+            />
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* ============================ HOOKS ============================ */}
+      <TabsContent value="hooks" className="mt-4 space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="font-serif text-xl flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              First-Three-Second Hooks
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Three opening lines engineered to stop a social scroll. Pick one,
+              test the other two.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {output.hooks.map((h, i) => (
+              <div
+                key={i}
+                className="group flex items-start gap-3 rounded-lg border border-border/60 bg-card p-3 hover:border-primary/40 transition-colors"
+              >
+                <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-semibold">
+                  {String.fromCharCode(65 + i)}
+                </div>
+                <p className="font-serif italic text-base text-foreground/90 leading-relaxed flex-1">
+                  “{h}”
+                </p>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                  onClick={() => {
+                    navigator.clipboard.writeText(h);
+                    toast.success("Hook copied");
+                  }}
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* ============================ AD COPY ============================ */}
+      <TabsContent value="ad" className="mt-4 space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="font-serif text-xl flex items-center gap-2">
+              <Type className="h-4 w-4 text-primary" />
+              Facebook Ad Copy
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Entertainment first. The bootcamp shows up naturally — never
+              before the joke lands.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div>
+              <SectionLabel>Primary Text · Variation 1</SectionLabel>
+              <CopyBlock text={output.adCopy.primaryTexts[0]} />
+              <SectionLabel>Primary Text · Variation 2</SectionLabel>
+              <CopyBlock text={output.adCopy.primaryTexts[1]} />
+              <SectionLabel>Primary Text · Variation 3</SectionLabel>
+              <CopyBlock text={output.adCopy.primaryTexts[2]} />
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              {output.adCopy.headlines.map((h, i) => (
+                <div key={i}>
+                  <SectionLabel>Headline {i + 1}</SectionLabel>
+                  <div className="rounded-md border border-border/60 bg-secondary/30 px-3 py-2 text-sm font-semibold">
+                    {h}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div>
+              <SectionLabel>Short Description</SectionLabel>
+              <p className="text-sm text-foreground/90 leading-relaxed">
+                {output.adCopy.description}
+              </p>
+            </div>
+
+            <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-4">
+              <SectionLabel>Call To Action</SectionLabel>
+              <p className="font-serif italic text-lg text-foreground">
+                {output.adCopy.cta}
+              </p>
+            </div>
+
+            <CopyButton
+              label="Copy full ad pack"
+              value={JSON.stringify(output.adCopy, null, 2)}
+            />
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* ============================ VIDEO ============================ */}
+      <TabsContent value="video" className="mt-4 space-y-4">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="font-serif text-xl flex items-center gap-2">
+              <Film className="h-4 w-4 text-primary" />
+              Video Production Brief
+            </CardTitle>
+            <p className="text-sm text-muted-foreground">
+              Practical for AI-generated video workflows. Caption-safe
+              composition throughout.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-5">
+            <Field label="Aspect Ratio" value={output.videoBrief.aspectRatio} mono />
+            <Field label="Visual Opening" value={output.videoBrief.visualOpening} />
+            <Field label="Joe Performance Shot" value={output.videoBrief.performanceShot} />
+
+            {output.videoBrief.onScreenCaptions.length > 0 && (
+              <div>
+                <SectionLabel>On-Screen Captions (funniest lines)</SectionLabel>
+                <ul className="space-y-2">
+                  {output.videoBrief.onScreenCaptions.map((c, i) => (
+                    <li
+                      key={i}
+                      className="rounded-md border border-border/60 bg-card px-3 py-2 text-sm text-foreground/90"
+                    >
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {output.videoBrief.sceneChanges.length > 0 && (
+              <div>
+                <SectionLabel>Suggested Scene Changes</SectionLabel>
+                <ol className="space-y-2 list-decimal list-inside text-sm text-foreground/90">
+                  {output.videoBrief.sceneChanges.map((c, i) => (
+                    <li key={i}>{c}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
+
+            <Field label="Visual Punchline" value={output.videoBrief.visualPunchline} />
+            <Field label="Final Frame" value={output.videoBrief.finalFrame} />
+
+            <CopyButton
+              label="Copy video brief"
+              value={JSON.stringify(output.videoBrief, null, 2)}
+            />
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      {/* ============================ NEXT EPISODE ============================ */}
+      <TabsContent value="next" className="mt-4 space-y-4">
+        <Card className="spotlight">
+          <CardHeader className="pb-3">
+            <CardTitle className="font-serif text-xl flex items-center gap-2">
+              <Flame className="h-4 w-4 text-primary" />
+              Coming Next from Joe
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-lg border-2 border-primary/30 bg-primary/5 p-4">
+              <SectionLabel>Next-Episode Teaser</SectionLabel>
+              <p className="font-serif italic text-lg text-foreground">
+                {output.nextEpisodeTeaser}
+              </p>
+            </div>
+            <div>
+              <SectionLabel>Suggested Next Episode Title</SectionLabel>
+              <div className="rounded-md border border-border/60 bg-secondary/30 px-4 py-3 font-serif text-lg">
+                {output.nextEpisodeTitle}
+              </div>
+            </div>
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Video className="h-4 w-4" />
+              Hit
+              <span className="font-medium text-foreground">Continue the Story</span>
+              in the control panel to write this next episode right now.
+            </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1.5">
+      {children}
+    </p>
+  );
+}
+
+function Field({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  mono?: boolean;
+}) {
+  if (!value) return null;
+  return (
+    <div>
+      <SectionLabel>{label}</SectionLabel>
+      <p
+        className={`text-sm text-foreground/90 leading-relaxed ${
+          mono ? "font-mono text-xs" : ""
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function CopyBlock({ text }: { text: string }) {
+  if (!text) return null;
+  return (
+    <div className="group flex items-start gap-2 mb-3">
+      <p className="text-sm text-foreground/90 leading-relaxed flex-1 rounded-md border border-border/60 bg-card px-3 py-2">
+        {text}
+      </p>
+      <Button
+        size="sm"
+        variant="ghost"
+        className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+        onClick={() => {
+          navigator.clipboard.writeText(text);
+          toast.success("Copied");
+        }}
+      >
+        <Copy className="h-3.5 w-3.5" />
+      </Button>
+    </div>
+  );
+}
+
+function CopyButton({ label, value }: { label: string; value: string }) {
+  return (
+    <Button
+      variant="outline"
+      size="sm"
+      onClick={() => {
+        navigator.clipboard.writeText(value);
+        toast.success("Copied to clipboard");
+      }}
+    >
+      <Copy className="h-3.5 w-3.5 mr-1.5" />
+      {label}
+    </Button>
+  );
+}
