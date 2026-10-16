@@ -7,6 +7,7 @@ import {
   BookOpen,
   Disc3,
   History as HistoryIcon,
+  Smartphone,
   Sparkles,
   Star,
 } from "lucide-react";
@@ -17,7 +18,9 @@ import {
 import { EpisodeHistory, type EpisodeListItem } from "@/components/joe/EpisodeHistory";
 import { MicLoader } from "@/components/joe/MicLoader";
 import { OutputDisplay } from "@/components/joe/OutputDisplay";
+import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
+import { WallManager } from "@/components/joe/WallManager";
 import {
   EPISODES,
   INTENSITIES,
@@ -27,6 +30,10 @@ import {
   type SongOutput,
   type StoryBible,
 } from "@/lib/joe-prompts";
+import type {
+  WallSummary,
+  WallWithItems,
+} from "@/lib/walls";
 import { toast } from "sonner";
 
 interface ApiResponse {
@@ -53,6 +60,177 @@ export default function Home() {
   const [loadingLabel, setLoadingLabel] = useState<string>("Joe is warming up…");
   const [activeError, setActiveError] = useState<string | null>(null);
   const [selectedEpisodeId, setSelectedEpisodeId] = useState<string | undefined>();
+
+  // === Wall state ===
+  const [walls, setWalls] = useState<WallSummary[]>([]);
+  const [activeWallId, setActiveWallId] = useState<string | null>(null);
+  const [activeWall, setActiveWall] = useState<WallWithItems | null>(null);
+
+  const refreshWalls = useCallback(async () => {
+    try {
+      const res = await fetch("/api/walls", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = await res.json();
+      const list: WallSummary[] = json.walls ?? [];
+      setWalls(list);
+      // Pick the first wall as active if none selected.
+      setActiveWallId((prev) => prev ?? list[0]?.id ?? null);
+    } catch (e) {
+      console.error("Wall list failed", e);
+    }
+  }, []);
+
+  const refreshActiveWall = useCallback(async () => {
+    if (!activeWallId) {
+      setActiveWall(null);
+      return;
+    }
+    try {
+      const res = await fetch(`/api/walls/${activeWallId}`, { cache: "no-store" });
+      if (!res.ok) return;
+      const json = await res.json();
+      setActiveWall(json.wall ?? null);
+    } catch (e) {
+      console.error("Wall fetch failed", e);
+    }
+  }, [activeWallId]);
+
+  useEffect(() => {
+    refreshWalls();
+  }, [refreshWalls]);
+
+  useEffect(() => {
+    refreshActiveWall();
+  }, [refreshActiveWall]);
+
+  // === Wall mutations ===
+  const handleCreateWall = useCallback(
+    async (data: { name: string; brandColor: string; emoji: string; tagline: string }) => {
+      const res = await fetch("/api/walls", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!res.ok) {
+        toast.error("Couldn't create wall.");
+        return;
+      }
+      const json = await res.json();
+      await refreshWalls();
+      if (json.wall?.id) setActiveWallId(json.wall.id);
+    },
+    [refreshWalls]
+  );
+
+  const handleDeleteWall = useCallback(
+    async (id: string) => {
+      const res = await fetch(`/api/walls?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        toast.error(j.error || "Couldn't delete wall.");
+        return;
+      }
+      toast.success("Wall deleted.");
+      if (activeWallId === id) setActiveWallId(null);
+      await refreshWalls();
+    },
+    [refreshWalls, activeWallId]
+  );
+
+  const handleSendToWall = useCallback(
+    async (episodeId: string, wallId: string) => {
+      const res = await fetch(`/api/walls/${wallId}/items`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ episodeId }),
+      });
+      if (!res.ok) {
+        toast.error("Couldn't send to wall.");
+        return;
+      }
+      const json = await res.json();
+      if (json.wall) {
+        setActiveWall(json.wall);
+        setWalls((prev) =>
+          prev.map((w) =>
+            w.id === json.wall.id ? { ...w, itemCount: json.wall.items.length } : w
+          )
+        );
+      }
+    },
+    []
+  );
+
+  const handlePromote = useCallback(
+    async (itemId: string) => {
+      if (!activeWallId) return;
+      const res = await fetch(`/api/walls/${activeWallId}/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "promote" }),
+      });
+      if (res.ok) {
+        const j = await res.json();
+        if (j.wall) setActiveWall(j.wall);
+      }
+    },
+    [activeWallId]
+  );
+
+  const handleDemote = useCallback(
+    async (itemId: string) => {
+      if (!activeWallId) return;
+      const res = await fetch(`/api/walls/${activeWallId}/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "demote" }),
+      });
+      if (res.ok) {
+        const j = await res.json();
+        if (j.wall) setActiveWall(j.wall);
+      }
+    },
+    [activeWallId]
+  );
+
+  const handleRemoveItem = useCallback(
+    async (itemId: string) => {
+      if (!activeWallId) return;
+      const res = await fetch(`/api/walls/${activeWallId}/items/${itemId}`, {
+        method: "DELETE",
+      });
+      if (res.ok) {
+        const j = await res.json();
+        if (j.wall) {
+          setActiveWall(j.wall);
+          setWalls((prev) =>
+            prev.map((w) =>
+              w.id === j.wall.id ? { ...w, itemCount: j.wall.items.length } : w
+            )
+          );
+        }
+      }
+    },
+    [activeWallId]
+  );
+
+  const handleSetPlaying = useCallback(
+    async (itemId: string) => {
+      if (!activeWallId) return;
+      const res = await fetch(`/api/walls/${activeWallId}/items/${itemId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setStatus", status: "playing" }),
+      });
+      if (res.ok) {
+        const j = await res.json();
+        if (j.wall) setActiveWall(j.wall);
+      }
+    },
+    [activeWallId]
+  );
 
   // === Initial load: fetch story bible + episode list ===
   const refreshAll = useCallback(async () => {
@@ -167,7 +345,7 @@ export default function Home() {
     <div className="min-h-screen flex flex-col lounge-bg">
       <Header storyBible={storyBible} />
 
-      <main className="flex-1 w-full max-w-[1400px] mx-auto px-4 md:px-6 py-6 md:py-8">
+      <main className="flex-1 w-full max-w-[1500px] mx-auto px-4 md:px-6 py-6 md:py-8">
         {/* Selection chips */}
         <div className="mb-5">
           <CurrentSelectionChips
@@ -184,7 +362,7 @@ export default function Home() {
           />
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-[380px_1fr] gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)_360px] gap-6">
           {/* Left column: Controls */}
           <aside className="lg:sticky lg:top-20 self-start">
             <ControlPanel
@@ -204,7 +382,7 @@ export default function Home() {
             />
           </aside>
 
-          {/* Right column: Output */}
+          {/* Middle column: Output + Story Bible + Episode Archive */}
           <section className="space-y-4 min-w-0">
             {activeError && (
               <Card className="border-destructive/40 bg-destructive/5">
@@ -217,11 +395,18 @@ export default function Home() {
 
             {isLoading && <LoadingCard label={loadingLabel} />}
 
-            {!isLoading && !output && !activeError && (
-              <EmptyState />
-            )}
+            {!isLoading && !output && !activeError && <EmptyState />}
 
-            {!isLoading && output && <OutputDisplay output={output} />}
+            {!isLoading && output && (
+              <OutputDisplay
+                output={output}
+                episodeId={selectedEpisodeId}
+                walls={walls}
+                activeWallId={activeWallId}
+                onSetActiveWall={setActiveWallId}
+                onSendToWall={handleSendToWall}
+              />
+            )}
 
             {/* Lower row: Story Bible + Episode Archive */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -250,6 +435,32 @@ export default function Home() {
               </div>
             </div>
           </section>
+
+          {/* Right column: Phone + Wall Manager */}
+          <aside className="space-y-4 lg:sticky lg:top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto thin-scroll pb-4">
+            <div>
+              <div className="flex items-center gap-2 mb-2 px-1">
+                <Smartphone className="h-4 w-4 text-primary" />
+                <h2 className="font-serif text-lg">Display Phone</h2>
+                <span className="text-xs text-muted-foreground ml-auto">
+                  Music Video Mode
+                </span>
+              </div>
+              <PhoneDisplay />
+            </div>
+            <WallManager
+              walls={walls}
+              activeWallId={activeWallId}
+              onSelectWall={setActiveWallId}
+              onCreateWall={handleCreateWall}
+              onDeleteWall={handleDeleteWall}
+              wall={activeWall}
+              onPromote={handlePromote}
+              onDemote={handleDemote}
+              onRemoveItem={handleRemoveItem}
+              onSetPlaying={handleSetPlaying}
+            />
+          </aside>
         </div>
       </main>
 
@@ -265,7 +476,7 @@ export default function Home() {
 function Header({ storyBible }: { storyBible: StoryBible | null }) {
   return (
     <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur supports-[backdrop-filter]:bg-background/65">
-      <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-3 flex items-center gap-3">
+      <div className="max-w-[1500px] mx-auto px-4 md:px-6 py-3 flex items-center gap-3">
         <div className="flex items-center gap-3">
           <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary border border-primary/30">
             <Disc3 className="h-5 w-5" />
@@ -306,7 +517,7 @@ function Header({ storyBible }: { storyBible: StoryBible | null }) {
 function Footer() {
   return (
     <footer className="mt-auto border-t border-border/60 bg-background/80 backdrop-blur">
-      <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-4 text-xs text-muted-foreground flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
+      <div className="max-w-[1500px] mx-auto px-4 md:px-6 py-4 text-xs text-muted-foreground flex flex-col md:flex-row items-start md:items-center justify-between gap-2">
         <p>
           Built for{" "}
           <a

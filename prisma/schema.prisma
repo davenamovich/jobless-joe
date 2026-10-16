@@ -98,3 +98,42 @@ model StoryBible {
   /// Total episodes produced so far
   episodeCount          Int      @default(0)
 }
+
+/// A branded wall — one per bot/character. Holds a queue of episodes
+/// (music videos, in Joe's case) that get displayed on the phone.
+model Wall {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  /// Display name, e.g. "Joe's Wall"
+  name        String
+  /// Brand color as a hex string, e.g. "#722F37"
+  brandColor  String   @default("#722F37")
+  /// Optional single emoji used as avatar
+  emoji       String   @default("🎙️")
+  /// Short tagline shown under the wall name
+  tagline     String   @default("")
+
+  items       WallItem[]
+}
+
+/// One entry in a wall's playback queue. References an Episode.
+model WallItem {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+
+  wallId      String
+  wall        Wall     @relation(fields: [wallId], references: [id], onDelete: Cascade)
+
+  /// The episode this item points to
+  episodeId   String
+
+  /// Order in the queue (lower = earlier). 0 is "up next".
+  order       Int      @default(0)
+
+  /// queued | playing | played
+  status      String   @default("queued")
+
+  @@index([wallId, order])
+}
