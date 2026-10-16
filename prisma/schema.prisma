@@ -46,6 +46,13 @@ model Episode {
   intensity     String
   /// Target audience key
   target        String
+  /// Crooner style key (e.g. "smoky-lounge", "big-band-vegas")
+  croonerStyle  String   @default("smoky-lounge")
+
+  /// Which AI backend produced this episode: "zai" | "openai-compat"
+  backend       String   @default("zai")
+  /// Model name as reported by the backend (e.g. "glm-4.6", "ace-1.5", "llama-3.1-70b")
+  backendModel  String?
 
   /// Which action produced this episode (generate / funnier / sharper / attitude / bigger-ending / thirty-ad / continue / alt-hooks)
   action        String
@@ -136,4 +143,25 @@ model WallItem {
   status      String   @default("queued")
 
   @@index([wallId, order])
+}
+
+/// Runtime AI backend configuration. Singleton row at id = "current".
+/// Allows the user to switch between Z.ai and an OpenAI-compatible endpoint
+/// (e.g. Ace 1.5 running locally or behind ngrok) without restarting the server.
+model BackendConfig {
+  id              String   @id @default("current")
+  updatedAt       DateTime @updatedAt
+
+  /// "zai" | "openai-compat"
+  activeBackend   String   @default("zai")
+
+  /// OpenAI-compatible base URL, e.g. "https://abc123.ngrok.app/v1" or "http://localhost:1234/v1"
+  openaiBaseUrl   String   @default("")
+  /// API key for the OpenAI-compat endpoint (may be empty for local models)
+  openaiApiKey    String   @default("")
+  /// Model name, e.g. "ace-1.5", "llama-3.1-70b", "gpt-4o-mini"
+  openaiModel     String   @default("")
+
+  /// Default crooner style key (the user can still override per-generation)
+  defaultCroonerStyle String @default("smoky-lounge")
 }
