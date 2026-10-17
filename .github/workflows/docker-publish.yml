@@ -1,0 +1,175 @@
+# =============================================================================
+# Jobless Joe — Build and publish Docker image to GitHub Container Registry
+# =============================================================================
+#
+# TRIGGERS
+# --------
+#  - Push a tag matching `v*` (e.g. `v1.0.0`, `v1.0.0-rc.1`)
+#    → builds a multi-arch image, tags it as both `:latest` and `:<tag>`
+#  - Manual dispatch via the Actions tab → "Run workflow"
+#    → builds and pushes as `:edge`
+#  - Pull request → builds but does NOT push (smoke test only)
+#
+# WHAT IT PRODUCES
+# ----------------
+#  - ghcr.io/${{ github.repository_owner }}/jobless-joe:latest
+#  - ghcr.io/${{ github.repository_owner }}/jobless-joe:<tag>
+#  - ghcr.io/${{ github.repository_owner }}/jobless-joe:edge  (manual only)
+#
+# The image is multi-arch: linux/amd64 + linux/arm64
+#  - amd64 covers Intel Macs, Windows, and most cloud VMs / Linux x86
+#  - arm64 covers Apple Silicon Macs and ARM cloud instances (Graviton, Ampere)
+#
+# AUTHENTICATION
+# --------------
+#  - GHCR uses the automatic GITHUB_TOKEN — no extra secrets needed.
+#  - The workflow grants `packages: write` permission via the `permissions:` block.
+#  - On first publish, the package visibility defaults to private.
+#    To make it public: github.com/users/<you>/packages/container/jobless-joe/settings
+#
+# HOW END USERS PULL IT
+# ---------------------
+#  - Once published, end users run `./joe.sh` and it uses `docker compose pull`
+#    instead of `docker compose build`. First-run drops from ~5 minutes to ~5 seconds.
+#  - Anonymous pulls work for public images. For private images, end users need
+#    a Personal Access Token with `read:packages` scope.
+# =============================================================================
+
+name: Publish Docker Image
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches:
+      - main
+    paths:
+      - "src/**"
+      - "prisma/**"
+      - "public/**"
+      - "package.json"
+      - "bun.lock"
+      - "Dockerfile"
+      - "next.config.ts"
+      - ".github/workflows/docker-publish.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "Dockerfile"
+      - "src/**"
+      - "package.json"
+      - "bun.lock"
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (defaults to current branch)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  # Lowercase required by Docker. GitHub usernames can have uppercase letters
+  # which break image names — `tr` lowercases them.
+  IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/jobless-joe
+
+jobs:
+  build-and-push:
+    name: Build & Push (amd64 + arm64)
+    runs-on: ubuntu-latest
+    steps:
+      # ----------------------------------------------------------------------
+      # 1. Check out the repo at the right ref.
+      # ----------------------------------------------------------------------
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref || github.ref }}
+
+      # ----------------------------------------------------------------------
+      # 2. Derive Docker tags + labels.
+      #    On tag push:    :latest + :<tag>     (e.g. :v1.0.0)
+      #    On main push:   :edge
+      #    On PR:          :pr-<number>          (not pushed, just for caching)
+      #    On manual run:  :edge
+      # ----------------------------------------------------------------------
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+            type=ref,event=pr
+          labels: |
+            org.opencontainers.image.title=Jobless Joe
+            org.opencontainers.image.description=The Crooner Song Engine — comedy-driven song generator for Jobless Joe's Bootcamp
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.licenses=MIT
+
+      # ----------------------------------------------------------------------
+      # 3. Set up QEMU for cross-platform builds (needed for arm64 on amd64 host).
+      # ----------------------------------------------------------------------
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      # ----------------------------------------------------------------------
+      # 4. Set up Docker Buildx (multi-arch builder).
+      # ----------------------------------------------------------------------
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ----------------------------------------------------------------------
+      # 5. Log in to GHCR using the automatic GITHUB_TOKEN.
+      #    Skipped on PRs (we don't push there).
+      # ----------------------------------------------------------------------
+      - name: Log in to GHCR
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ----------------------------------------------------------------------
+      # 6. Build + push. On PRs we don't push, we just verify the build works.
+      # ----------------------------------------------------------------------
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache to GHCR's cache storage — speeds up subsequent builds
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
+          # Build-time args (none currently, but kept here for future use)
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      # ----------------------------------------------------------------------
+      # 7. Print a summary with the image digests for each platform.
+      # ----------------------------------------------------------------------
+      - name: Image digest
+        if: github.event_name != 'pull_request'
+        run: |
+          echo "## Published image" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Pull with:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker pull ${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Digest: \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Multi-arch: linux/amd64 + linux/arm64" >> $GITHUB_STEP_SUMMARY

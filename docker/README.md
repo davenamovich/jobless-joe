@@ -6,7 +6,9 @@
 
 ## Quick start
 
-### Option A: Just Z.ai (no local model) — simplest
+> **Default behavior**: `./joe.sh` pulls the prebuilt multi-arch image from GitHub Container Registry (5-second first-run). To build locally instead, use `./joe.sh --build` (~5 minutes). See [docs/PUBLISHING.md](../docs/PUBLISHING.md) for how to publish your own image.
+
+### Option A — Just Z.ai (zero config, no local model) — simplest
 
 ```bash
 ./joe.sh
@@ -15,13 +17,14 @@
 That's it. The script will:
 1. Check Docker is installed and running
 2. Create `.env.docker` from the template
-3. Build + start the Next.js app container
-4. Wait for the app to be healthy
-5. Open http://localhost:3000 in your browser
+3. **Pull** the prebuilt Next.js image from `ghcr.io/jobless-joe/jobless-joe:latest` (or build locally with `--build`)
+4. Start the container
+5. Wait for the app to be healthy
+6. Open http://localhost:3000 in your browser
 
 The app uses Z.ai's GLM model by default — no API key needed in this environment.
 
-### Option B: Bundle Ace 1.5 locally
+### Option B — Bundle Ace 1.5 locally
 
 1. Drop your Ace 1.5 model file at `./models/ace-1.5.gguf` (or `.bin`, `.safetensors`).
 
@@ -75,11 +78,29 @@ docker compose --profile local-llm down -v   # nuclear option
 
   --local      Force the local-llm profile (start Ollama even without a model file)
   --zai        Force Z.ai-only mode (don't start Ollama)
+  --build      Build the app image locally instead of pulling from GHCR
+               (use this for development or when the published image is unavailable)
+  --pull       Pull the prebuilt image from GHCR (default behavior)
   --no-open    Don't open the browser after starting
   --help       Show this help
 ```
 
-Without flags, the script auto-detects: if `./models/ace-1.5.gguf` exists, it starts Ollama; otherwise it runs Z.ai-only.
+Without flags, the script auto-detects: if `./models/ace-1.5.gguf` exists, it starts Ollama; otherwise it runs Z.ai-only. The image is pulled by default — pass `--build` to compile locally.
+
+### Overriding the image source
+
+```bash
+# Use a forked image
+JOE_IMAGE=ghcr.io/<your-username>/jobless-joe:latest ./joe.sh
+
+# Pin to a specific version
+JOE_IMAGE=ghcr.io/jobless-joe/jobless-joe:v1.0.0 ./joe.sh
+
+# Use the bleeding-edge build
+JOE_IMAGE=ghcr.io/jobless-joe/jobless-joe:edge ./joe.sh
+```
+
+Or set `JOE_IMAGE` permanently in `.env.docker`.
 
 ---
 
@@ -102,6 +123,7 @@ All runtime config lives in **`.env.docker`** (gitignored). Copy from `.env.dock
 | Variable           | Default                          | Description                                            |
 |--------------------|----------------------------------|--------------------------------------------------------|
 | `APP_PORT`         | `3000`                           | Host port for the Next.js app                           |
+| `JOE_IMAGE`        | `ghcr.io/jobless-joe/jobless-joe:latest` | Docker image to pull. Override to use a fork or pin to a version. |
 | `AI_BACKEND`       | `zai`                            | `zai` or `openai-compat`                               |
 | `OPENAI_BASE_URL`  | `http://ollama:11434/v1`         | OpenAI-compat endpoint URL (only used if backend=openai-compat) |
 | `OPENAI_API_KEY`   | `ollama`                         | API key (any string for local servers)                 |

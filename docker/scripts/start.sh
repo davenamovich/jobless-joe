@@ -53,24 +53,31 @@ step()  { echo -e "\n${BLUE}▶${NC} $1"; }
 # -----------------------------------------------------------------------------
 FORCE_PROFILE=""
 OPEN_BROWSER=true
+PREFER_BUILD=false
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --local)   FORCE_PROFILE="local-llm"; shift ;;
         --zai)     FORCE_PROFILE="none"; shift ;;
         --no-open) OPEN_BROWSER=false; shift ;;
+        --build)   PREFER_BUILD=true; shift ;;
+        --pull)   PREFER_BUILD=false; shift ;;
         --help|-h)
             cat <<EOF
 Jobless Joe — Docker one-click start
 
-Usage: $0 [--local|--zai] [--no-open]
+Usage: $0 [--local|--zai] [--build|--pull] [--no-open]
 
 Flags:
   --local    Force local-llm profile (Ollama + Ace 1.5)
   --zai      Force Z.ai-only mode (no Ollama)
+  --build    Build the app image locally instead of pulling from GHCR
+             (use this for development or when the published image is unavailable)
+  --pull     Pull the prebuilt image from GHCR (default behavior)
   --no-open  Don't open the browser after starting
   --help     Show this help message
 
 Auto-detects Ace 1.5 model in ./models/ if no flag is given.
+Default image source: ghcr.io/jobless-joe/jobless-joe:latest (override with \$JOE_IMAGE)
 EOF
             exit 0
             ;;
@@ -186,18 +193,35 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# Step 4: Build + start the containers
+# Step 4: Pull the prebuilt image OR build it locally
 # -----------------------------------------------------------------------------
-step "Building + starting containers (first run takes a few minutes)..."
+step "Preparing the app image..."
 
-# Load env vars from .env.docker into this shell so docker compose picks them up.
+# Load env vars from .env.docker into this shell so docker compose picks them up
+# (APP_PORT, AI_BACKEND, OPENAI_*, JOE_IMAGE, etc.).
+cd "$(cd "$(dirname "$0")/../.." && pwd)"
 # shellcheck disable=SC1090
 set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
 
-cd "$(cd "$(dirname "$0")/../.." && pwd)"
+# The image name comes from $JOE_IMAGE env (set in .env.docker) or defaults to
+# the GHCR published image. If --build was passed, skip the pull entirely.
+DEFAULT_IMAGE="ghcr.io/jobless-joe/jobless-joe:latest"
+JOE_IMAGE="${JOE_IMAGE:-$DEFAULT_IMAGE}"
+export JOE_IMAGE
 
-# Build images (no-op if already built and up-to-date).
-docker compose $PROFILE_FLAG build --pull
+if [[ "$PREFER_BUILD" == "true" ]]; then
+    info "Building the app image locally (--build flag set)..."
+    info "This will take ~3-5 minutes on first run."
+    docker compose $PROFILE_FLAG build --pull
+else
+    info "Pulling prebuilt image: $JOE_IMAGE"
+    info "(If this fails, run with --build to build locally instead.)"
+    if ! docker compose $PROFILE_FLAG pull app 2>&1; then
+        warn "Pull failed. Falling back to local build..."
+        warn "(Common causes: image not published yet, GHCR auth required, network issue.)"
+        docker compose $PROFILE_FLAG build
+    fi
+fi
 
 # Start in detached mode.
 docker compose $PROFILE_FLAG up -d
