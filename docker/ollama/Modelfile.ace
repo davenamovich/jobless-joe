@@ -1,0 +1,38 @@
+# =============================================================================
+# Ollama Modelfile for Ace 1.5
+# =============================================================================
+# This template tells Ollama how to wrap your raw model file (e.g. .gguf)
+# so it can be served via the OpenAI-compatible /v1/chat/completions API.
+#
+# HOW TO USE
+# ----------
+#   1. Drop your model file at ./models/ace-1.5.gguf
+#      (or .bin — any format Ollama supports)
+#   2. Run: ./docker/scripts/load-ace-model.sh
+#      (This script runs `ollama create` with this Modelfile.)
+#
+# CUSTOMIZATION
+# -------------
+# - Change the FROM line if your model file has a different name.
+# - Tweak the parameters below to tune the model's behavior for Joe's
+#   crooner songwriting — these defaults work well for creative writing.
+# =============================================================================
+
+# Path to the model file. Relative to the directory the load script runs in.
+# The load script resolves this to an absolute path inside the Ollama container.
+FROM /models/ace-1.5.gguf
+
+# Tuning — these get baked into the model registration. The OpenAI-compat
+# API at /v1/chat/completions will pass through `temperature` and `max_tokens`
+# from each request, but the defaults below apply if the request omits them.
+PARAMETER temperature 0.85
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER num_ctx 8192
+PARAMETER stop "<|im_end|>"
+PARAMETER stop "</s>"
+
+# System prompt that Ollama injects IF the request doesn't include one.
+# Jobless Joe's app always sends its own system prompt, so this is mostly
+# a fallback for direct Ollama usage.
+SYSTEM """You are a helpful, creative assistant."""

@@ -1,0 +1,142 @@
+# =============================================================================
+# Jobless Joe — The Crooner Song Engine
+# Docker Compose — one-click install with optional Ace 1.5 (local LLM)
+# =============================================================================
+#
+# WHAT THIS FILE DOES
+# -------------------
+# Defines two services:
+#   1. `app`     — the Next.js crooner song engine (always runs)
+#   2. `ollama`  — local LLM server for running Ace 1.5 (opt-in via profile)
+#
+# The `ollama` service is on a separate profile so it only starts when you
+# explicitly ask for it. The app works fine without it (falls back to Z.ai).
+#
+# QUICK START (Z.ai only — no local model)
+# ----------------------------------------
+#   docker compose up -d
+#   open http://localhost:3000
+#
+# QUICK START (with Ace 1.5 locally)
+# ---------------------------------
+#   1. Drop your model file at ./models/ace-1.5.gguf  (or .bin, .safetensors)
+#   2. cp .env.docker.example .env.docker
+#   3. Edit .env.docker: set AI_BACKEND=openai-compat, OPENAI_MODEL=ace-1.5
+#   4. docker compose --profile local-llm up -d
+#   5. ./docker/scripts/load-ace-model.sh
+#   6. open http://localhost:3000
+#
+# =============================================================================
+
+# Load environment variables from .env.docker if it exists.
+# This lets users override AI_BACKEND / OPENAI_* without editing this file.
+# All vars have sensible defaults so the app runs even without an env file.
+x-default-env: &default-env
+  DATABASE_URL: "file:/app/db/custom.db"
+  # Backend selection — Z.ai by default. Set to "openai-compat" to use
+  # the bundled Ollama (or any other OpenAI-compatible endpoint).
+  AI_BACKEND: ${AI_BACKEND:-zai}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://ollama:11434/v1}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
+  OPENAI_MODEL: ${OPENAI_MODEL:-ace-1.5}
+  # Next.js runtime config
+  NODE_ENV: production
+  PORT: 3000
+  HOSTNAME: 0.0.0.0
+
+services:
+  # ---------------------------------------------------------------------------
+  # The Next.js app — Jobless Joe's Crooner Song Engine.
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: jobless-joe-app
+    restart: unless-stopped
+    ports:
+      # Host port can be overridden via APP_PORT env (default 3000).
+      # Useful if you're already running something on 3000.
+      - "${APP_PORT:-3000}:3000"
+    environment:
+      <<: *default-env
+    volumes:
+      # Persistent SQLite database — survives container restarts.
+      - joe-db:/app/db
+      # Generated TTS audio files — also persist across restarts.
+      - joe-audio:/app/public/audio
+      # Optional: mount a .env file for runtime config overrides without
+      # rebuilding the image. Commented out by default.
+      # - ./.env.docker:/app/.env:ro
+    depends_on:
+      # If the local-llm profile is active, wait for Ollama to be healthy
+      # before starting the app. When the profile is inactive, this
+      # condition is skipped (Ollama isn't running).
+      ollama:
+        condition: service_healthy
+        required: false
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - joe-net
+
+  # ---------------------------------------------------------------------------
+  # Ollama — local LLM server. Optional, opt-in via the `local-llm` profile.
+  #
+  # To enable: `docker compose --profile local-llm up -d`
+  # Then load your Ace 1.5 model file with ./docker/scripts/load-ace-model.sh
+  # ---------------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: jobless-joe-ollama
+    profiles: ["local-llm"]
+    restart: unless-stopped
+    ports:
+      # Expose Ollama on the host too so you can poke it directly
+      # (e.g. curl http://localhost:11434/api/tags). Comment out if you
+      # don't need direct host access.
+      - "${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      # Ollama model store — survives container restarts. This is where
+      # your loaded Ace 1.5 model lives.
+      - ollama-models:/root/.ollama
+      # Mount the host's ./models/ folder read-only so the load-ace-model.sh
+      # script can find your .gguf file at /models/ace-1.5.gguf.
+      - ./models:/models:ro
+    # On Linux hosts with an NVIDIA GPU, uncomment these to enable GPU
+    # acceleration. (Requires nvidia-container-toolkit installed.)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - joe-net
+
+# ---------------------------------------------------------------------------
+# Named volumes — survive `docker compose down` (use `docker compose down -v`
+# to wipe them entirely, including the database and audio cache).
+# ---------------------------------------------------------------------------
+volumes:
+  joe-db:
+    driver: local
+  joe-audio:
+    driver: local
+  ollama-models:
+    driver: local
+
+networks:
+  joe-net:
+    driver: bridge
