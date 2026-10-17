@@ -1,0 +1,37 @@
+# Dependabot — keeps our base images + GitHub Actions versions up to date.
+#
+# What it does:
+#   - Weekly checks for new versions of `node:22-alpine` and `ollama/ollama:latest`
+#   - Opens PRs automatically when new versions are available
+#   - Also bumps GitHub Actions (actions/checkout, docker/build-push-action, etc.)
+#     to their latest major version
+#
+# Without this, the Dockerfile's base images go stale and miss security patches.
+
+version: 2
+updates:
+  # Dockerfile base image — node:22-alpine
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(deps):"
+    labels:
+      - dependencies
+      - docker
+
+  # GitHub Actions versions
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci):"
+    labels:
+      - dependencies
+      - ci
