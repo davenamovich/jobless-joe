@@ -334,6 +334,7 @@ export default function Home() {
           return;
         }
         setOutput(json.output);
+        if (json.episodeId) setSelectedEpisodeId(json.episodeId);
         if (json.storyBible) setStoryBible(json.storyBible);
         toast.success(episodeSuccessToast(action));
         // Refresh episode list in the background
@@ -341,7 +342,6 @@ export default function Home() {
           .then((r) => r.json())
           .then((j) => {
             setEpisodes(j.episodes ?? []);
-            setSelectedEpisodeId(j.episodes?.[0]?.id);
           })
           .catch(() => {});
       } catch (e) {
