@@ -109,10 +109,31 @@ export function WallManager(props: Props) {
     // for lyrics + closing line — the wall item carries a teaser but the
     // lyrics are loaded on demand.
     try {
-      const res = await fetch(`/api/episodes/${item.episodeId}`);
-      if (!res.ok) throw new Error("Failed to load episode");
-      const json = await res.json();
+      const [epRes, audioRes] = await Promise.all([
+        fetch(`/api/episodes/${item.episodeId}`),
+        fetch(
+          `/api/audio?episodeId=${encodeURIComponent(
+            item.episodeId
+          )}&voice=jam`,
+          { cache: "no-store" }
+        ),
+      ]);
+      if (!epRes.ok) throw new Error("Failed to load episode");
+      const json = await epRes.json();
       const out = json.output;
+
+      // Audio may or may not be ready yet. If not, the playback store will
+      // poll for it (see PhoneDisplay's polling effect).
+      let audioUrl: string | null = null;
+      let audioDurationSec = 0;
+      if (audioRes.ok) {
+        const audioJson = await audioRes.json();
+        if (audioJson.hasAudio && audioJson.audioUrl) {
+          audioUrl = audioJson.audioUrl;
+          audioDurationSec = audioJson.durationSec || 0;
+        }
+      }
+
       loadTrack(
         {
           wallItemId: item.id,
@@ -124,10 +145,17 @@ export function WallManager(props: Props) {
           wallName: wall.name,
           lyrics: out.lyrics ?? "",
           closingLine: out.closingLine ?? "",
+          voice: "jam",
+          audioUrl,
+          audioDurationSec,
         },
         wall.id
       );
-      toast.success(`Now playing: ${out.episodeTitle ?? item.episodeTitle}`);
+      toast.success(
+        audioUrl
+          ? `Now playing: ${out.episodeTitle ?? item.episodeTitle}`
+          : `Loading audio for: ${out.episodeTitle ?? item.episodeTitle}`
+      );
     } catch (e) {
       console.error(e);
       toast.error("Couldn't load that track.");

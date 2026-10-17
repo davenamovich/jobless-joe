@@ -272,31 +272,40 @@ export async function POST(req: NextRequest) {
       ? storyBible.episodeCount + 1
       : storyBible.episodeCount;
 
-  await Promise.all([
-    db.episode.create({
-      data: {
-        episodeTheme: body.episodeKey,
-        episodeLabel: body.episodeLabel,
-        customTopic: body.customTopic ?? null,
-        duration: body.duration,
-        intensity: body.intensity,
-        target: body.target,
-        croonerStyle: croonerStyleKey,
-        backend: usedBackend,
-        backendModel: usedModel || null,
-        action: body.action,
-        title: cleaned.episodeTitle,
-        output: JSON.stringify(cleaned),
-        teaser: cleaned.nextEpisodeTeaser,
-        nextTitle: cleaned.nextEpisodeTitle,
-      },
-    }),
-    saveStoryBible(cleaned.storyBibleUpdate, newEpisodeCount),
-  ]);
+  const createdEpisode = await db.episode.create({
+    data: {
+      episodeTheme: body.episodeKey,
+      episodeLabel: body.episodeLabel,
+      customTopic: body.customTopic ?? null,
+      duration: body.duration,
+      intensity: body.intensity,
+      target: body.target,
+      croonerStyle: croonerStyleKey,
+      backend: usedBackend,
+      backendModel: usedModel || null,
+      action: body.action,
+      title: cleaned.episodeTitle,
+      output: JSON.stringify(cleaned),
+      teaser: cleaned.nextEpisodeTeaser,
+      nextTitle: cleaned.nextEpisodeTitle,
+    },
+  });
+
+  await saveStoryBible(cleaned.storyBibleUpdate, newEpisodeCount);
+
+  // === Fire TTS audio generation in the background. ===
+  // We don't await this — generation can take 5-30s for a long song, and the
+  // user should see their lyrics immediately. The phone UI fetches the audio
+  // lazily when the user hits Play, polling until it's ready.
+  const voiceForTts = await defaultVoice();
+  void generateAudioInBackground(createdEpisode.id, voiceForTts).catch((e) => {
+    console.error("Background TTS failed:", e);
+  });
 
   return NextResponse.json({
     ok: true,
     output: cleaned,
+    episodeId: createdEpisode.id,
     storyBible: {
       ...cleaned.storyBibleUpdate,
       episodeCount: newEpisodeCount,
@@ -304,5 +313,34 @@ export async function POST(req: NextRequest) {
     backend: usedBackend,
     model: usedModel,
     croonerStyle: croonerStyleKey,
+    audio: {
+      voice: voiceForTts,
+      status: "generating",
+    },
   });
+}
+
+/** Pull the default voice from BackendConfig (falling back to "jam"). */
+async function defaultVoice(): Promise<string> {
+  const cfg = await db.backendConfig.findUnique({ where: { id: "current" } });
+  return cfg?.defaultVoice || "jam";
+}
+
+/**
+ * Kick off audio generation in the background. The result (success or
+ * failure) is logged but doesn't affect the API response — the UI polls
+ * /api/audio?episodeId=...&voice=... to know when it's ready.
+ */
+async function generateAudioInBackground(episodeId: string, voice: string) {
+  try {
+    const { ensureAudioTrack } = await import("@/lib/tts-service");
+    const result = await ensureAudioTrack(episodeId, voice);
+    if (!result.ok) {
+      console.warn(`Audio generation failed for ${episodeId}: ${result.error}`);
+    } else {
+      console.log(`Audio generated for ${episodeId} (${voice}): ${result.audioUrl}`);
+    }
+  } catch (e) {
+    console.error("Audio generation error:", e);
+  }
 }

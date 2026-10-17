@@ -164,4 +164,32 @@ model BackendConfig {
 
   /// Default crooner style key (the user can still override per-generation)
   defaultCroonerStyle String @default("smoky-lounge")
+
+  /// Default TTS voice for audio generation
+  defaultVoice    String   @default("jam")
+}
+
+/// A generated audio track for an episode — spoken lyrics that play
+/// through the Display Phone. One track per (episodeId, voice) pair.
+/// Re-generating with a different voice creates a new row.
+model AudioTrack {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+
+  episodeId   String
+  /// Voice key from VOICES (e.g. "jam", "tongtong", "xiaochen")
+  voice       String
+  /// "wav" | "mp3"
+  format      String   @default("mp3")
+  /// Speed used (0.5..2.0)
+  speed       Float    @default(0.9)
+  /// Duration in seconds (rounded), populated after generation
+  durationSec Int      @default(0)
+  /// Number of TTS chunks that were concatenated
+  chunkCount  Int      @default(0)
+  /// On-disk relative path under /public/audio/, e.g. "ep_abc_jam.mp3"
+  filePath    String
+
+  @@unique([episodeId, voice])
+  @@index([episodeId])
 }
