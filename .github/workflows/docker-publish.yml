@@ -5,17 +5,27 @@
 # PIPELINE OVERVIEW
 # -----------------
 #
-#   ┌─────────────────┐    ┌─────────────┐    ┌──────────┐    ┌──────────┐
-#   │ build-and-push  │───▶│ smoke-test  │───▶│  sign    │───▶│  release │
-#   │ (multi-arch)    │    │ (boot + curl) │   │ (cosign) │    │ (notes)  │
-#   └─────────────────┘    └─────────────┘    └──────────┘    └──────────┘
+#   ┌──────────────┐   ┌──────────────┐        ┌──────────────┐
+#   │ build amd64  │   │ build arm64  │        │              │
+#   │ ubuntu-latest│   │ ubuntu-24.04 │───▶────│    merge     │
+#   └──────────────┘   │     -arm     │        │ (manifest)   │
+#                      └──────────────┘        └──────┬───────┘
+#                                                     │
+#                 ┌────────────┐   ┌──────────┐   ┌───▼──────┐
+#                 │ smoke-test │──▶│   sign   │──▶│ release  │
+#                 │ (boot+curl)│   │ (cosign) │   │ (notes)  │
+#                 └────────────┘   └──────────┘   └──────────┘
+#
+# arm64 is built on GitHub's native arm64 runner (free for public repos)
+# instead of QEMU emulation. The emulated build took over an hour; native
+# builds finish in single-digit minutes.
 #
 # TRIGGERS
 # --------
 #  - Push a tag matching `v*` → builds + tests + signs + creates GitHub release
 #  - Push to main branch       → builds + tests + signs as :edge
 #  - Manual workflow_dispatch  → builds + tests + signs as :edge
-#  - Pull request              → builds + smoke-tests, does NOT push/sign
+#  - Pull request              → builds, does NOT push/sign/smoke-test
 #
 # WHAT IT PRODUCES (on tag push)
 # ------------------------------
@@ -78,16 +88,24 @@ env:
 
 jobs:
   # ===========================================================================
-  # Job 1: Build + push the multi-arch image.
+  # Jobs 1a/1b: Build each architecture natively and push by digest.
+  # Producing a digest (rather than a tag) lets the merge job assemble one
+  # multi-arch manifest without either platform racing the other.
   # ===========================================================================
-  build-and-push:
-    name: Build & Push (amd64 + arm64)
-    runs-on: ubuntu-latest
-    outputs:
-      tags: ${{ steps.meta.outputs.tags }}
-      version: ${{ steps.meta.outputs.version }}
-      digest: ${{ steps.digest.outputs.digest }}
-      image: ${{ env.IMAGE_NAME }}
+  build:
+    name: Build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+            arch: amd64
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+            arch: arm64
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -99,19 +117,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=tag
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
-            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
-            type=ref,event=pr
           labels: |
             org.opencontainers.image.title=Jobless Joe
             org.opencontainers.image.description=The Crooner Song Engine — comedy-driven song generator for Jobless Joe's Bootcamp
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.licenses=MIT
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -124,44 +134,134 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      # PRs only verify that the image builds; nothing is pushed.
+      - name: Build (pull request)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ matrix.platform }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch }}
+
+      - name: Build and push by digest
+        if: github.event_name != 'pull_request'
         id: build
         uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
-          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
-          build-args: |
-            BUILDKIT_INLINE_CACHE=1
+          # Per-arch cache refs: two jobs writing one cache tag would race.
+          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch }}
+          cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache-${{ matrix.arch }},mode=max
+          outputs: type=image,name=${{ env.IMAGE_NAME }},push-by-digest=true,name-canonical=true,push=true
 
-      # The build-push-action exposes the digest of the BUILT image (not the
-      # registry-side digest). Capture it so downstream jobs (sign, smoke-test)
-      # can reference the exact image we just pushed.
-      - name: Capture image digest
-        id: digest
+      - name: Export digest
+        if: github.event_name != 'pull_request'
         run: |
-          echo "digest=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
-          echo "## Built image" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Image: \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Tags: \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Platforms: linux/amd64 + linux/arm64" >> $GITHUB_STEP_SUMMARY
+          mkdir -p /tmp/digests
+          digest="${{ steps.build.outputs.digest }}"
+          touch "/tmp/digests/${digest#sha256:}"
+
+      - name: Upload digest
+        if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: digests-${{ matrix.arch }}
+          path: /tmp/digests/*
+          if-no-files-found: error
+          retention-days: 1
 
   # ===========================================================================
-  # Job 2: Smoke test — boot the published image and verify it actually works.
+  # Job 2: Merge the per-arch digests into one multi-arch manifest and apply
+  # the release tags (:latest / :v1.0.0 / :edge) to it.
+  # ===========================================================================
+  merge:
+    name: Merge Multi-Arch Manifest
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    outputs:
+      digest: ${{ steps.inspect.outputs.digest }}
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: digests-*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker meta
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=tag
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=edge,enable=${{ github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch' }}
+
+      - name: Create multi-arch manifest
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+
+          count=$(find /tmp/digests -type f | wc -l | tr -d ' ')
+          if [ "$count" -ne 2 ]; then
+            echo "::error::Expected 2 platform digests, found $count."
+            ls -l /tmp/digests
+            exit 1
+          fi
+
+          cd /tmp/digests
+          docker buildx imagetools create \
+            $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "${IMAGE_NAME}@sha256:%s " *)
+
+      - name: Capture manifest digest
+        id: inspect
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="latest"
+          else
+            TAG="edge"
+          fi
+          digest=$(docker buildx imagetools inspect "${IMAGE_NAME}:${TAG}" \
+            --format '{{json .Manifest.Digest}}' | tr -d '"')
+          echo "digest=${digest}" >> "$GITHUB_OUTPUT"
+          echo "## Multi-arch manifest" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Image: \`${IMAGE_NAME}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tags: \`${{ steps.meta.outputs.tags }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Digest: \`${digest}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Platforms: linux/amd64 + linux/arm64" >> "$GITHUB_STEP_SUMMARY"
+
+  # ===========================================================================
+  # Job 3: Smoke test — boot the published image and verify it actually works.
   # Runs on amd64 (cross-platform smoke test would be slower than the value
   # it adds). Skipped on PRs since we don't push there.
   # ===========================================================================
   smoke-test:
     name: Smoke Test (boot + curl)
     runs-on: ubuntu-latest
-    needs: build-and-push
+    needs: merge
     if: github.event_name != 'pull_request'
     steps:
       - name: Checkout
@@ -191,9 +291,9 @@ jobs:
           echo "## Smoke testing ${{ env.IMAGE_NAME }}:$TAG" >> $GITHUB_STEP_SUMMARY
 
       # ----------------------------------------------------------------------
-      # Boot the container with a tmpfs-backed SQLite database (no volume
-      # mount needed for smoke test). Map port 3000 to a random host port
-      # we can curl from the next step.
+      # Boot the container with a fresh SQLite database (no volume mount
+      # needed for smoke test). Map port 3000 to the host. The entrypoint
+      # creates the schema, so this exercises the same path users get.
       # ----------------------------------------------------------------------
       - name: Boot container
         run: |
@@ -290,14 +390,14 @@ jobs:
         run: docker rm -f jobless-joe-smoke 2>/dev/null || true
 
   # ===========================================================================
-  # Job 3: Sign the image with cosign (keyless, via Sigstore).
+  # Job 4: Sign the image with cosign (keyless, via Sigstore).
   # Uses OIDC token from GitHub Actions to authenticate to Fulcio CA.
   # Signature is recorded in rekor.sigstore.dev transparency log.
   # ===========================================================================
   sign:
     name: Sign Image (cosign keyless)
     runs-on: ubuntu-latest
-    needs: [build-and-push, smoke-test]
+    needs: [merge, smoke-test]
     if: github.event_name != 'pull_request'
     steps:
       - name: Log in to GHCR
@@ -308,7 +408,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       # cosign needs the image digest, not the tag, because tags can move.
-      # We reference the digest captured by build-and-push.
+      # We reference the digest captured by the merge job.
       - name: Install cosign
         uses: sigstore/cosign-installer@v3
         with:
@@ -320,14 +420,14 @@ jobs:
           # The signature goes to GHCR's cosign-specific namespace:
           #   ghcr.io/<owner>/jobless-joe:sha256-<digest>.sig
           cosign sign --yes \
-            ${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.digest }}
+            ${{ env.IMAGE_NAME }}@${{ needs.merge.outputs.digest }}
 
           echo "## Image signed ✓" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Signature stored at:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.IMAGE_NAME }}@${{ needs.merge.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Verify with:" >> $GITHUB_STEP_SUMMARY
@@ -345,18 +445,18 @@ jobs:
           cosign verify \
             --certificate-identity-regexp="https://github.com/${{ github.repository }}/.+" \
             --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
-            ${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.digest }} \
+            ${{ env.IMAGE_NAME }}@${{ needs.merge.outputs.digest }} \
             || { echo "::error::Signature verification failed"; exit 1; }
           echo "✓ Signature verified against rekor transparency log"
 
   # ===========================================================================
-  # Job 4: Create GitHub Release with auto-generated notes.
+  # Job 5: Create GitHub Release with auto-generated notes.
   # Only runs on tag pushes (v*). Skipped on main / PR / manual runs.
   # ===========================================================================
   release:
     name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs: [build-and-push, smoke-test, sign]
+    needs: [merge, smoke-test, sign]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout
