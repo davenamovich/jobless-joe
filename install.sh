@@ -5,7 +5,7 @@
 #
 # USAGE
 # -----
-#   curl -fsSL https://github.com/<owner>/jobless-joe/raw/main/install.sh | bash
+#   curl -fsSL https://github.com/davenamovich/jobless-joe/raw/main/install.sh | bash
 #
 # Or, to install a specific version:
 #   curl -fsSL .../install.sh | bash -s -- --version v1.2.0
@@ -54,11 +54,26 @@ step()  { echo -e "\n${BLUE}▶${NC} $1"; }
 # -----------------------------------------------------------------------------
 # Defaults + flag parsing
 # -----------------------------------------------------------------------------
-REPO_URL_DEFAULT="https://github.com/jobless-joe/jobless-joe.git"
+REPO_URL_DEFAULT="https://github.com/davenamovich/jobless-joe.git"
 INSTALL_DIR_DEFAULT="$HOME/jobless-joe"
 VERSION="main"
 START_AFTER_INSTALL=true
 VERIFY_SIGNATURE=true
+
+usage() {
+    cat <<'EOF'
+Jobless Joe — one-command installer
+
+Usage: install.sh [flags]
+
+Flags:
+  --version <tag>   Install a specific git tag (default: main)
+  --no-start        Clone + configure but don't start the containers
+  --no-verify       Skip cosign signature verification (default: try to verify)
+  --dir <path>      Install directory (default: ~/jobless-joe)
+  --help            Show this help
+EOF
+}
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -67,7 +82,7 @@ while [[ $# -gt 0 ]]; do
         --no-verify)  VERIFY_SIGNATURE=false; shift ;;
         --dir)        INSTALL_DIR_DEFAULT="$2"; shift 2 ;;
         --help|-h)
-            sed -n '2,/^# =\+/p' "$0" | sed 's/^# \?//' | head -50
+            usage
             exit 0
             ;;
         *) fatal "Unknown flag: $1 (use --help for options)" ;;
@@ -143,7 +158,7 @@ if ! command -v docker >/dev/null 2>&1; then
             echo "     (Apple Silicon: click 'Mac with Apple chip' — Intel Mac: 'Mac with Intel chip')"
             echo "  2. Open Docker Desktop and complete the setup wizard"
             echo "  3. Re-run this installer:"
-            echo "     curl -fsSL https://github.com/jobless-joe/jobless-joe/raw/main/install.sh | bash"
+            echo "     curl -fsSL https://github.com/davenamovich/jobless-joe/raw/main/install.sh | bash"
             echo ""
             # Brew install as a shortcut for users who have Homebrew.
             if command -v brew >/dev/null 2>&1; then
@@ -244,22 +259,39 @@ info "Repo ready at $INSTALL_DIR (version: $VERSION)"
 cd "$INSTALL_DIR"
 
 # -----------------------------------------------------------------------------
-# Step 5: Verify the image signature (if cosign is available)
+# Step 5: Resolve the published image for this version
+# -----------------------------------------------------------------------------
+step "Resolving published image..."
+
+# Determine the GitHub repo from the remote URL so the image path and the
+# cosign identity match the repo we just cloned. Falls back to the canonical
+# upstream if the remote can't be parsed (e.g. tarball installs).
+REMOTE_URL=$(git config --get remote.origin.url 2>/dev/null || echo "")
+REPO_PATH=$(echo "$REMOTE_URL" | sed -E 's#(git@github.com:|https://github.com/|http://github.com/)(.+)#\2#' | sed 's/\.git$//')
+
+if [[ -z "$REPO_PATH" ]]; then
+    REPO_PATH="davenamovich/jobless-joe"
+    warn "Couldn't determine GitHub repo path. Using: $REPO_PATH"
+fi
+
+# Pinned tags pull the matching image; everything else follows :latest.
+if [[ "$VERSION" == v* ]]; then
+    IMAGE_TAG="$VERSION"
+else
+    IMAGE_TAG="latest"
+fi
+IMAGE="ghcr.io/${REPO_PATH}/jobless-joe:${IMAGE_TAG}"
+
+# Keep the running container on the image that matches the checked-out version.
+# start.sh honours an exported JOE_IMAGE unless .env.docker overrides it.
+export JOE_IMAGE="${JOE_IMAGE:-$IMAGE}"
+info "Image: $JOE_IMAGE"
+
+# -----------------------------------------------------------------------------
+# Step 6: Verify the image signature (if cosign is available)
 # -----------------------------------------------------------------------------
 if [[ "$VERIFY_SIGNATURE" == true ]] && command -v cosign >/dev/null 2>&1; then
     step "Verifying published image signature..."
-
-    # Try to determine the GitHub repo from the remote URL so we can verify
-    # against the correct identity. Falls back to a sensible default.
-    REMOTE_URL=$(git config --get remote.origin.url 2>/dev/null || echo "")
-    REPO_PATH=$(echo "$REMOTE_URL" | sed -E 's#(git@github.com:|https://github.com/|http://github.com/)(.+)#\2#' | sed 's/\.git$//')
-
-    if [[ -z "$REPO_PATH" ]]; then
-        REPO_PATH="jobless-joe/jobless-joe"
-        warn "Couldn't determine GitHub repo path. Verifying against: $REPO_PATH"
-    fi
-
-    IMAGE="ghcr.io/${REPO_PATH}/jobless-joe:latest"
     info "Verifying: $IMAGE"
 
     if cosign verify \
@@ -282,7 +314,7 @@ if [[ "$VERIFY_SIGNATURE" == true ]] && command -v cosign >/dev/null 2>&1; then
 fi
 
 # -----------------------------------------------------------------------------
-# Step 6: Start the app
+# Step 7: Start the app
 # -----------------------------------------------------------------------------
 if [[ "$START_AFTER_INSTALL" == true ]]; then
     step "Starting Jobless Joe..."
@@ -316,6 +348,7 @@ echo ""
 echo "  Location: $INSTALL_DIR"
 echo "  Repo:     $REPO_URL"
 echo "  Version:  $VERSION"
+echo "  Image:    $JOE_IMAGE"
 echo ""
 echo "Useful commands (run from $INSTALL_DIR):"
 echo "  ./joe.sh                       # start (pulls prebuilt image)"

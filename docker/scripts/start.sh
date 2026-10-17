@@ -77,7 +77,7 @@ Flags:
   --help     Show this help message
 
 Auto-detects Ace 1.5 model in ./models/ if no flag is given.
-Default image source: ghcr.io/jobless-joe/jobless-joe:latest (override with \$JOE_IMAGE)
+Default image source: ghcr.io/davenamovich/jobless-joe:latest (override with \$JOE_IMAGE)
 EOF
             exit 0
             ;;
@@ -205,7 +205,7 @@ set -a; source "$ENV_FILE" 2>/dev/null || true; set +a
 
 # The image name comes from $JOE_IMAGE env (set in .env.docker) or defaults to
 # the GHCR published image. If --build was passed, skip the pull entirely.
-DEFAULT_IMAGE="ghcr.io/jobless-joe/jobless-joe:latest"
+DEFAULT_IMAGE="ghcr.io/davenamovich/jobless-joe:latest"
 JOE_IMAGE="${JOE_IMAGE:-$DEFAULT_IMAGE}"
 export JOE_IMAGE
 

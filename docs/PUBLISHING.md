@@ -122,9 +122,9 @@ If you have [cosign](https://docs.sigstore.dev/cosign/installation/) installed, 
 
 ```bash
 cosign verify \
-  --certificate-identity-regexp='https://github.com/jobless-joe/jobless-joe/.+' \
+  --certificate-identity-regexp='https://github.com/davenamovich/jobless-joe/.+' \
   --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
-  ghcr.io/jobless-joe/jobless-joe:latest
+  ghcr.io/davenamovich/jobless-joe:latest
 ```
 
 Replace `jobless-joe/jobless-joe` with your fork's `owner/repo` if you published from a fork.
@@ -182,7 +182,7 @@ curl -fsSL .../install.sh | bash -s -- [flags]
 
 ```bash
 # Default install (main branch, latest image, auto-start)
-curl -fsSL https://github.com/jobless-joe/jobless-joe/raw/main/install.sh | bash
+curl -fsSL https://github.com/davenamovich/jobless-joe/raw/main/install.sh | bash
 
 # Install a specific version
 curl -fsSL .../install.sh | bash -s -- --version v1.2.0
@@ -388,7 +388,7 @@ docker/
     ├── start.sh              # Pulls by default; --build for local build
     └── ...
 .env.docker.example           # Documents JOE_IMAGE variable
-docker-compose.yml            # image: ${JOE_IMAGE:-ghcr.io/jobless-joe/jobless-joe:latest}
+docker-compose.yml            # image: ${JOE_IMAGE:-ghcr.io/davenamovich/jobless-joe:latest}
 ```
 
 ---
@@ -547,7 +547,7 @@ Once you've published, end users have two options:
 If you've claimed the `jobless-joe` namespace, no changes needed — `docker-compose.yml` already points at:
 
 ```yaml
-image: ${JOE_IMAGE:-ghcr.io/jobless-joe/jobless-joe:latest}
+image: ${JOE_IMAGE:-ghcr.io/davenamovich/jobless-joe:latest}
 ```
 
 End users just run `./joe.sh` and it pulls automatically.
@@ -571,7 +571,7 @@ JOE_IMAGE=ghcr.io/your-username/jobless-joe:latest ./joe.sh
 For reproducible deployments, pin to a tag:
 
 ```bash
-JOE_IMAGE=ghcr.io/jobless-joe/jobless-joe:v1.2.3 ./joe.sh
+JOE_IMAGE=ghcr.io/davenamovich/jobless-joe:v1.2.3 ./joe.sh
 ```
 
 ---
@@ -583,8 +583,8 @@ JOE_IMAGE=ghcr.io/jobless-joe/jobless-joe:v1.2.3 ./joe.sh
 | Use the prebuilt image (default, fastest) | `./joe.sh` |
 | Force a local build (development) | `./joe.sh --build` |
 | Use a forked image | `JOE_IMAGE=ghcr.io/<user>/jobless-joe:latest ./joe.sh` |
-| Pin to a specific version | `JOE_IMAGE=ghcr.io/jobless-joe/jobless-joe:v1.0.0 ./joe.sh` |
-| Pull the bleeding-edge build | `JOE_IMAGE=ghcr.io/jobless-joe/jobless-joe:edge ./joe.sh` |
+| Pin to a specific version | `JOE_IMAGE=ghcr.io/davenamovich/jobless-joe:v1.0.0 ./joe.sh` |
+| Pull the bleeding-edge build | `JOE_IMAGE=ghcr.io/davenamovich/jobless-joe:edge ./joe.sh` |
 
 ---
 
@@ -658,7 +658,7 @@ docker/
     ├── start.sh              # Pulls by default; --build for local build
     └── ...
 .env.docker.example           # Documents JOE_IMAGE variable
-docker-compose.yml            # image: ${JOE_IMAGE:-ghcr.io/jobless-joe/jobless-joe:latest}
+docker-compose.yml            # image: ${JOE_IMAGE:-ghcr.io/davenamovich/jobless-joe:latest}
 ```
 
 ---
