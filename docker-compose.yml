@@ -53,8 +53,8 @@ services:
   # ---------------------------------------------------------------------------
   app:
     # The image variable can be overridden via env. Defaults to GHCR latest.
-    # If you forked the repo, change this to ghcr.io/<your-username>/jobless-joe:latest
-    image: ${JOE_IMAGE:-ghcr.io/jobless-joe/jobless-joe:latest}
+    # If you forked the repo, override JOE_IMAGE (e.g. ghcr.io/<your-username>/jobless-joe:latest).
+    image: ${JOE_IMAGE:-ghcr.io/davenamovich/jobless-joe:latest}
     # Build context is only used when the user passes --build to start.sh.
     # `docker compose pull` ignores this. `docker compose build` uses it.
     build:
@@ -84,7 +84,7 @@ services:
         condition: service_healthy
         required: false
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/"]
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
       interval: 15s
       timeout: 5s
       retries: 5

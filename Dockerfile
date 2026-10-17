@@ -50,7 +50,16 @@ RUN bun run db:generate \
     && bun run build
 
 # -----------------------------------------------------------------------------
-# Stage 3: runtime — minimal image with only what's needed to run.
+# Stage 3: prisma-cli — only the Prisma CLI + schema engine, used at container
+# start to create/update the SQLite schema. Kept in its own stage so the
+# runtime image doesn't need the full dev dependency tree.
+# -----------------------------------------------------------------------------
+FROM node:22-alpine AS prisma-cli
+WORKDIR /prisma-cli
+RUN npm install --no-audit --no-fund prisma@6.11.1
+
+# -----------------------------------------------------------------------------
+# Stage 4: runtime — minimal image with only what's needed to run.
 # -----------------------------------------------------------------------------
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -74,9 +83,14 @@ COPY --from=builder --chown=nextjs:nodejs /app/node_modules/.prisma ./node_modul
 COPY --from=builder --chown=nextjs:nodejs /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder --chown=nextjs:nodejs /app/prisma ./prisma
 
+# Prisma CLI used by the entrypoint to bootstrap the SQLite schema on boot.
+COPY --from=prisma-cli --chown=nextjs:nodejs /prisma-cli/node_modules ./prisma-cli/node_modules
+COPY --chown=nextjs:nodejs docker/entrypoint.sh ./entrypoint.sh
+
 # Pre-create the data directories and chown them so the volume mounts
 # inherit the right ownership.
-RUN mkdir -p /app/db /app/public/audio \
+RUN chmod +x /app/entrypoint.sh \
+    && mkdir -p /app/db /app/public/audio \
     && chown -R nextjs:nodejs /app/db /app/public
 
 USER nextjs
@@ -84,12 +98,16 @@ USER nextjs
 # Expose the port the standalone server listens on.
 EXPOSE 3000
 
-# Use tini as init so signals (Ctrl-C, docker stop) propagate cleanly.
-ENTRYPOINT ["/sbin/tini", "--"]
+# Use tini as init so signals (Ctrl-C, docker stop) propagate cleanly, then
+# run the entrypoint that prepares the SQLite schema before starting the app.
+ENTRYPOINT ["/sbin/tini", "--", "/app/entrypoint.sh"]
 
 # Health check: hit the home page and check for 200.
+# Use 127.0.0.1 rather than localhost: inside the container localhost resolves
+# to ::1 first, while the standalone server binds IPv4 only, so a localhost
+# probe fails and the container is marked unhealthy even when it is serving.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
-    CMD wget -qO- http://localhost:3000/ >/dev/null 2>&1 || exit 1
+    CMD wget -qO- http://127.0.0.1:3000/ >/dev/null 2>&1 || exit 1
 
 # Run the Next.js standalone server.
 ENV PORT=3000

@@ -1,0 +1,6 @@
+# Normalize text files, but keep scripts LF-only: a CRLF shell script fails
+# on Linux before the first line, which would break the container entrypoint
+# and the curl | bash installer.
+* text=auto
+*.sh text eol=lf
+Dockerfile text eol=lf
