@@ -1,0 +1,65 @@
+# Version control + editors
+.git
+.gitignore
+.gitattributes
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Node + build artifacts
+node_modules
+.next
+out
+dist
+build
+
+# Bun
+bun.lockb
+
+# Logs + telemetry
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.DS_Store
+
+# Local env (use docker-compose env_file instead)
+.env
+.env.local
+.env.development
+.env.production
+
+# Docker artifacts (avoid recursive context)
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Tests + scripts not needed at runtime
+tests
+scripts/test-tts.ts
+
+# Database + audio + downloads — these are mounted as volumes at runtime
+db/*.db
+db/*.db-journal
+public/audio/*
+download
+
+# Documentation
+README.md
+*.md
+!docker/README.md
+
+# Caddyfile + zscripts (host-only dev tooling)
+Caddyfile
+.zscripts
+.dev.log
+.dev.log.*
+
+# Prisma migration artifacts not needed at runtime
+prisma/migrations
+
+# Examples + skills (host-only)
+examples
+skills
