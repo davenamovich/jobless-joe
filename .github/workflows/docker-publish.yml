@@ -472,7 +472,7 @@ jobs:
       # between the previous tag and this one. Equivalent to clicking
       # "Generate release notes" in the GitHub UI.
       - name: Create release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ steps.tag.outputs.name }}
           name: Jobless Joe ${{ steps.tag.outputs.name }}
