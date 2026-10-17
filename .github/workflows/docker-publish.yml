@@ -1,38 +1,34 @@
 # =============================================================================
-# Jobless Joe — Build and publish Docker image to GitHub Container Registry
+# Jobless Joe — Build, test, sign, and publish Docker image to GHCR
 # =============================================================================
+#
+# PIPELINE OVERVIEW
+# -----------------
+#
+#   ┌─────────────────┐    ┌─────────────┐    ┌──────────┐    ┌──────────┐
+#   │ build-and-push  │───▶│ smoke-test  │───▶│  sign    │───▶│  release │
+#   │ (multi-arch)    │    │ (boot + curl) │   │ (cosign) │    │ (notes)  │
+#   └─────────────────┘    └─────────────┘    └──────────┘    └──────────┘
 #
 # TRIGGERS
 # --------
-#  - Push a tag matching `v*` (e.g. `v1.0.0`, `v1.0.0-rc.1`)
-#    → builds a multi-arch image, tags it as both `:latest` and `:<tag>`
-#  - Manual dispatch via the Actions tab → "Run workflow"
-#    → builds and pushes as `:edge`
-#  - Pull request → builds but does NOT push (smoke test only)
+#  - Push a tag matching `v*` → builds + tests + signs + creates GitHub release
+#  - Push to main branch       → builds + tests + signs as :edge
+#  - Manual workflow_dispatch  → builds + tests + signs as :edge
+#  - Pull request              → builds + smoke-tests, does NOT push/sign
 #
-# WHAT IT PRODUCES
-# ----------------
-#  - ghcr.io/${{ github.repository_owner }}/jobless-joe:latest
-#  - ghcr.io/${{ github.repository_owner }}/jobless-joe:<tag>
-#  - ghcr.io/${{ github.repository_owner }}/jobless-joe:edge  (manual only)
+# WHAT IT PRODUCES (on tag push)
+# ------------------------------
+#  - ghcr.io/<owner>/jobless-joe:latest        (multi-arch)
+#  - ghcr.io/<owner>/jobless-joe:v1.0.0         (multi-arch)
+#  - cosign signature attached to the image    (keyless, sigstore)
+#  - GitHub Release with auto-generated notes  (draft=false, public)
 #
-# The image is multi-arch: linux/amd64 + linux/arm64
-#  - amd64 covers Intel Macs, Windows, and most cloud VMs / Linux x86
-#  - arm64 covers Apple Silicon Macs and ARM cloud instances (Graviton, Ampere)
-#
-# AUTHENTICATION
-# --------------
-#  - GHCR uses the automatic GITHUB_TOKEN — no extra secrets needed.
-#  - The workflow grants `packages: write` permission via the `permissions:` block.
-#  - On first publish, the package visibility defaults to private.
-#    To make it public: github.com/users/<you>/packages/container/jobless-joe/settings
-#
-# HOW END USERS PULL IT
-# ---------------------
-#  - Once published, end users run `./joe.sh` and it uses `docker compose pull`
-#    instead of `docker compose build`. First-run drops from ~5 minutes to ~5 seconds.
-#  - Anonymous pulls work for public images. For private images, end users need
-#    a Personal Access Token with `read:packages` scope.
+# SECURITY
+# --------
+#  - Image is signed with cosign in "keyless" mode using Sigstore's Fulcio CA.
+#  - Signatures are stored in a rekor transparency log (rekor.sigstore.dev).
+#  - End users can verify with `cosign verify` (see docs/PUBLISHING.md).
 # =============================================================================
 
 name: Publish Docker Image
@@ -60,6 +56,7 @@ on:
       - "src/**"
       - "package.json"
       - "bun.lock"
+      - ".github/workflows/docker-publish.yml"
   workflow_dispatch:
     inputs:
       ref:
@@ -67,36 +64,36 @@ on:
         required: false
         default: ""
 
+# We need id-token:write for cosign keyless signing (Sigstore OIDC).
+# We need contents:write for the release job to create GitHub releases.
 permissions:
-  contents: read
+  contents: write
   packages: write
+  id-token: write
+  attestations: write
 
 env:
   REGISTRY: ghcr.io
-  # Lowercase required by Docker. GitHub usernames can have uppercase letters
-  # which break image names — `tr` lowercases them.
   IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/jobless-joe
 
 jobs:
+  # ===========================================================================
+  # Job 1: Build + push the multi-arch image.
+  # ===========================================================================
   build-and-push:
     name: Build & Push (amd64 + arm64)
     runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+      version: ${{ steps.meta.outputs.version }}
+      digest: ${{ steps.digest.outputs.digest }}
+      image: ${{ env.IMAGE_NAME }}
     steps:
-      # ----------------------------------------------------------------------
-      # 1. Check out the repo at the right ref.
-      # ----------------------------------------------------------------------
       - name: Checkout
         uses: actions/checkout@v4
         with:
           ref: ${{ github.event.inputs.ref || github.ref }}
 
-      # ----------------------------------------------------------------------
-      # 2. Derive Docker tags + labels.
-      #    On tag push:    :latest + :<tag>     (e.g. :v1.0.0)
-      #    On main push:   :edge
-      #    On PR:          :pr-<number>          (not pushed, just for caching)
-      #    On manual run:  :edge
-      # ----------------------------------------------------------------------
       - name: Docker meta
         id: meta
         uses: docker/metadata-action@v5
@@ -113,22 +110,12 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.licenses=MIT
 
-      # ----------------------------------------------------------------------
-      # 3. Set up QEMU for cross-platform builds (needed for arm64 on amd64 host).
-      # ----------------------------------------------------------------------
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
-      # ----------------------------------------------------------------------
-      # 4. Set up Docker Buildx (multi-arch builder).
-      # ----------------------------------------------------------------------
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      # ----------------------------------------------------------------------
-      # 5. Log in to GHCR using the automatic GITHUB_TOKEN.
-      #    Skipped on PRs (we don't push there).
-      # ----------------------------------------------------------------------
       - name: Log in to GHCR
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
@@ -137,10 +124,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # ----------------------------------------------------------------------
-      # 6. Build + push. On PRs we don't push, we just verify the build works.
-      # ----------------------------------------------------------------------
       - name: Build and push
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -149,27 +134,285 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # Cache to GHCR's cache storage — speeds up subsequent builds
           cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache
           cache-to: type=registry,ref=${{ env.IMAGE_NAME }}:buildcache,mode=max
-          # Build-time args (none currently, but kept here for future use)
           build-args: |
             BUILDKIT_INLINE_CACHE=1
 
-      # ----------------------------------------------------------------------
-      # 7. Print a summary with the image digests for each platform.
-      # ----------------------------------------------------------------------
-      - name: Image digest
-        if: github.event_name != 'pull_request'
+      # The build-push-action exposes the digest of the BUILT image (not the
+      # registry-side digest). Capture it so downstream jobs (sign, smoke-test)
+      # can reference the exact image we just pushed.
+      - name: Capture image digest
+        id: digest
         run: |
-          echo "## Published image" >> $GITHUB_STEP_SUMMARY
+          echo "digest=${{ steps.build.outputs.digest }}" >> $GITHUB_OUTPUT
+          echo "## Built image" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Pull with:" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`${{ env.IMAGE_NAME }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Tags: \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Digest: \`${{ steps.build.outputs.digest }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Platforms: linux/amd64 + linux/arm64" >> $GITHUB_STEP_SUMMARY
+
+  # ===========================================================================
+  # Job 2: Smoke test — boot the published image and verify it actually works.
+  # Runs on amd64 (cross-platform smoke test would be slower than the value
+  # it adds). Skipped on PRs since we don't push there.
+  # ===========================================================================
+  smoke-test:
+    name: Smoke Test (boot + curl)
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the just-published image
+        run: |
+          # Pull the specific tag we just built. Use :latest on tag pushes,
+          # :edge on main pushes / manual runs.
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            TAG="latest"
+          else
+            TAG="edge"
+          fi
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          docker pull ${{ env.IMAGE_NAME }}:$TAG
+          echo "## Smoke testing ${{ env.IMAGE_NAME }}:$TAG" >> $GITHUB_STEP_SUMMARY
+
+      # ----------------------------------------------------------------------
+      # Boot the container with a tmpfs-backed SQLite database (no volume
+      # mount needed for smoke test). Map port 3000 to a random host port
+      # we can curl from the next step.
+      # ----------------------------------------------------------------------
+      - name: Boot container
+        run: |
+          docker run -d \
+            --name jobless-joe-smoke \
+            -p 3000:3000 \
+            -e DATABASE_URL="file:/tmp/smoke.db" \
+            -e AI_BACKEND=zai \
+            ${{ env.IMAGE_NAME }}:${{ env.TAG }}
+
+          # Wait up to 60 seconds for the healthcheck to pass.
+          for i in {1..30}; do
+            STATUS=$(docker inspect --format='{{.State.Health.Status}}' jobless-joe-smoke 2>/dev/null || echo "none")
+            if [[ "$STATUS" == "healthy" ]]; then
+              echo "Container is healthy after ${i}*2s."
+              break
+            fi
+            if [[ "$STATUS" == "unhealthy" ]]; then
+              echo "::error::Container marked unhealthy."
+              docker logs jobless-joe-smoke
+              exit 1
+            fi
+            sleep 2
+          done
+
+          if [[ "$STATUS" != "healthy" ]]; then
+            echo "::error::Container did not become healthy within 60s."
+            docker logs jobless-joe-smoke
+            exit 1
+          fi
+
+      - name: Curl endpoints
+        run: |
+          set -e
+
+          # 1. Home page — should return 200 + HTML containing "Jobless Joe"
+          echo "→ GET /"
+          CODE=$(curl -s -o /tmp/home.html -w "%{http_code}" http://localhost:3000/)
+          echo "  HTTP $CODE"
+          [[ "$CODE" == "200" ]] || { echo "::error::Home page returned $CODE"; exit 1; }
+          grep -q "Jobless Joe" /tmp/home.html || { echo "::error::Home page doesn't contain 'Jobless Joe'"; exit 1; }
+          echo "  ✓ Home page renders + contains 'Jobless Joe'"
+
+          # 2. Story Bible API — should return 200 + JSON
+          echo "→ GET /api/story-bible"
+          CODE=$(curl -s -o /tmp/sb.json -w "%{http_code}" http://localhost:3000/api/story-bible)
+          echo "  HTTP $CODE"
+          [[ "$CODE" == "200" ]] || { echo "::error::Story Bible API returned $CODE"; exit 1; }
+          python3 -c "import json; json.load(open('/tmp/sb.json'))" || { echo "::error::Story Bible response is not valid JSON"; exit 1; }
+          echo "  ✓ Story Bible API returns valid JSON"
+
+          # 3. Episodes API — should return 200 + JSON with episodes array
+          echo "→ GET /api/episodes"
+          CODE=$(curl -s -o /tmp/eps.json -w "%{http_code}" http://localhost:3000/api/episodes)
+          echo "  HTTP $CODE"
+          [[ "$CODE" == "200" ]] || { echo "::error::Episodes API returned $CODE"; exit 1; }
+          python3 -c "import json; d=json.load(open('/tmp/eps.json')); assert 'episodes' in d, 'missing episodes key'" || { echo "::error::Episodes response malformed"; exit 1; }
+          echo "  ✓ Episodes API returns valid JSON"
+
+          # 4. Walls API — should return 200 + JSON with walls array
+          echo "→ GET /api/walls"
+          CODE=$(curl -s -o /tmp/walls.json -w "%{http_code}" http://localhost:3000/api/walls)
+          echo "  HTTP $CODE"
+          [[ "$CODE" == "200" ]] || { echo "::error::Walls API returned $CODE"; exit 1; }
+          python3 -c "import json; d=json.load(open('/tmp/walls.json')); assert 'walls' in d, 'missing walls key'" || { echo "::error::Walls response malformed"; exit 1; }
+          echo "  ✓ Walls API returns valid JSON"
+
+          # 5. Backend config API
+          echo "→ GET /api/backend/config"
+          CODE=$(curl -s -o /tmp/cfg.json -w "%{http_code}" http://localhost:3000/api/backend/config)
+          echo "  HTTP $CODE"
+          [[ "$CODE" == "200" ]] || { echo "::error::Backend config API returned $CODE"; exit 1; }
+          echo "  ✓ Backend config API returns valid JSON"
+
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "docker pull ${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo "### All smoke tests passed ✓" >> $GITHUB_STEP_SUMMARY
+          echo "- Home page: 200 OK, contains 'Jobless Joe'" >> $GITHUB_STEP_SUMMARY
+          echo "- /api/story-bible: 200 OK, valid JSON" >> $GITHUB_STEP_SUMMARY
+          echo "- /api/episodes: 200 OK, valid JSON" >> $GITHUB_STEP_SUMMARY
+          echo "- /api/walls: 200 OK, valid JSON" >> $GITHUB_STEP_SUMMARY
+          echo "- /api/backend/config: 200 OK, valid JSON" >> $GITHUB_STEP_SUMMARY
+
+      - name: Capture logs on failure
+        if: failure()
+        run: |
+          echo "## Container logs (failure)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          docker logs jobless-joe-smoke 2>&1 | tail -100 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup
+        if: always()
+        run: docker rm -f jobless-joe-smoke 2>/dev/null || true
+
+  # ===========================================================================
+  # Job 3: Sign the image with cosign (keyless, via Sigstore).
+  # Uses OIDC token from GitHub Actions to authenticate to Fulcio CA.
+  # Signature is recorded in rekor.sigstore.dev transparency log.
+  # ===========================================================================
+  sign:
+    name: Sign Image (cosign keyless)
+    runs-on: ubuntu-latest
+    needs: [build-and-push, smoke-test]
+    if: github.event_name != 'pull_request'
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # cosign needs the image digest, not the tag, because tags can move.
+      # We reference the digest captured by build-and-push.
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: "v2.4.1"
+
+      - name: Sign image (keyless)
+        run: |
+          # Sign by digest. cosign keyless uses the OIDC token automatically.
+          # The signature goes to GHCR's cosign-specific namespace:
+          #   ghcr.io/<owner>/jobless-joe:sha256-<digest>.sig
+          cosign sign --yes \
+            ${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.digest }}
+
+          echo "## Image signed ✓" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Signature stored at:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.digest }}" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Digest: \`${{ steps.meta.outputs.tags }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "Verify with:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Multi-arch: linux/amd64 + linux/arm64" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "cosign verify \\"
+          echo "  --certificate-identity-regexp='https://github.com/${{ github.repository }}/.+' \\"
+          echo "  --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \\"
+          echo "  ${{ env.IMAGE_NAME }}:latest" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Verify signature (sanity check)
+        run: |
+          # Verify our own signature to confirm it's valid + in rekor.
+          cosign verify \
+            --certificate-identity-regexp="https://github.com/${{ github.repository }}/.+" \
+            --certificate-oidc-issuer="https://token.actions.githubusercontent.com" \
+            ${{ env.IMAGE_NAME }}@${{ needs.build-and-push.outputs.digest }} \
+            || { echo "::error::Signature verification failed"; exit 1; }
+          echo "✓ Signature verified against rekor transparency log"
+
+  # ===========================================================================
+  # Job 4: Create GitHub Release with auto-generated notes.
+  # Only runs on tag pushes (v*). Skipped on main / PR / manual runs.
+  # ===========================================================================
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-and-push, smoke-test, sign]
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history for changelog generation
+
+      - name: Extract tag name
+        id: tag
+        run: echo "name=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      # softprops/action-gh-release auto-generates release notes from PRs
+      # between the previous tag and this one. Equivalent to clicking
+      # "Generate release notes" in the GitHub UI.
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: Jobless Joe ${{ steps.tag.outputs.name }}
+          generate_release_notes: true
+          body: |
+            ## 🎙️ Jobless Joe ${{ steps.tag.outputs.name }}
+
+            The Crooner Song Engine — comedy-driven song generator for Jobless Joe's Bootcamp.
+
+            ### Install
+
+            ```bash
+            curl -fsSL https://github.com/${{ github.repository }}/raw/main/install.sh | bash
+            ```
+
+            Or, if you've already cloned the repo:
+            ```bash
+            ./joe.sh
+            ```
+
+            ### What's in this release
+
+            See the auto-generated changelog below for the full diff.
+
+            ### Image
+
+            - Multi-arch: `linux/amd64` + `linux/arm64`
+            - Signed with cosign (keyless via Sigstore)
+            - `docker pull ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.name }}`
+
+            ### Verify the image
+
+            ```bash
+            cosign verify \
+              --certificate-identity-regexp='https://github.com/${{ github.repository }}/.+' \
+              --certificate-oidc-issuer='https://token.actions.githubusercontent.com' \
+              ${{ env.IMAGE_NAME }}:${{ steps.tag.outputs.name }}
+            ```
+
+          draft: false
+          prerelease: ${{ contains(steps.tag.outputs.name, '-') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

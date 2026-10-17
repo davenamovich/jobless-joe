@@ -4,7 +4,17 @@
 
 ---
 
-## Quick start
+## Three install paths
+
+### One-command installer (recommended for end users)
+
+```bash
+curl -fsSL https://github.com/<owner>/jobless-joe/raw/main/install.sh | bash
+```
+
+Handles everything: detects OS, installs Docker if missing (Linux/WSL2 only), verifies image signature with cosign (if installed), clones the repo, starts the app, opens the browser. See [`docs/PUBLISHING.md`](../docs/PUBLISHING.md) for full flag reference.
+
+### Quick start (with Docker already installed)
 
 > **Default behavior**: `./joe.sh` pulls the prebuilt multi-arch image from GitHub Container Registry (5-second first-run). To build locally instead, use `./joe.sh --build` (~5 minutes). See [docs/PUBLISHING.md](../docs/PUBLISHING.md) for how to publish your own image.
 
