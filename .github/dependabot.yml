@@ -22,6 +22,12 @@ updates:
     labels:
       - dependencies
       - docker
+    ignore:
+      # Prisma's schema engine fails to generate under non-LTS Node releases
+      # (node:25-alpine broke `prisma generate` in CI), so only move the base
+      # image to a new major deliberately, after testing.
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]
 
   # GitHub Actions versions
   - package-ecosystem: github-actions
