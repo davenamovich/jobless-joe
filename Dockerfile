@@ -11,7 +11,7 @@
 # Stage 1: deps — install all node_modules (including devDependencies needed
 # for the build, like prisma, typescript, eslint).
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS deps
+FROM node:25-alpine AS deps
 WORKDIR /app
 
 # Bun is used by the project scripts; install it for the build stage only.
@@ -30,7 +30,7 @@ RUN bun run db:generate
 # -----------------------------------------------------------------------------
 # Stage 2: build — produce the Next.js standalone output.
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS builder
+FROM node:25-alpine AS builder
 WORKDIR /app
 
 RUN apk add --no-cache libc6-compat \
@@ -54,14 +54,14 @@ RUN bun run db:generate \
 # start to create/update the SQLite schema. Kept in its own stage so the
 # runtime image doesn't need the full dev dependency tree.
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS prisma-cli
+FROM node:25-alpine AS prisma-cli
 WORKDIR /prisma-cli
 RUN npm install --no-audit --no-fund prisma@6.11.1
 
 # -----------------------------------------------------------------------------
 # Stage 4: runtime — minimal image with only what's needed to run.
 # -----------------------------------------------------------------------------
-FROM node:22-alpine AS runner
+FROM node:25-alpine AS runner
 WORKDIR /app
 
 # Tighten runtime security: run as non-root.
