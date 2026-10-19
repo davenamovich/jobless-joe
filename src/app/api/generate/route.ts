@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   ACTIONS,
+  isEpisodeKey,
   buildSystemPrompt,
   buildTightenPrompt,
   buildUserPrompt,
   DURATIONS,
   EMPTY_STORY_BIBLE,
-  EPISODES,
   INTENSITIES,
   MAX_SCRIPT_CHARS,
   MIN_SCRIPT_CHARS,
@@ -27,6 +27,7 @@ import { CROONER_STYLES } from "@/lib/crooner-styles";
 import { DEFAULT_LANGUAGE, isLanguageKey } from "@/lib/languages";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { cleanYouTubeSeo } from "@/lib/youtube-service";
+import { SEASON, seasonEpisodeFor } from "@/lib/season";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -310,9 +311,20 @@ export async function POST(req: NextRequest) {
   }
 
   const validEpisode =
-    body.episodeKey === "custom" || EPISODES.some((e) => e.key === body.episodeKey);
+    body.episodeKey === "custom" || isEpisodeKey(body.episodeKey);
   if (!validEpisode) {
     return NextResponse.json({ error: "Unknown episode theme." }, { status: 400 });
+  }
+  // "Continue the story" always means the season, even when the song on
+  // screen was a one-off custom topic: it plays the next season episode.
+  if (body.action === "continue" && body.episodeKey === "custom") {
+    body = {
+      ...body,
+      episodeKey: SEASON[0].key,
+      episodeLabel: SEASON[0].label,
+      customTopic: undefined,
+      customScript: undefined,
+    };
   }
   if (!INTENSITIES.some((i) => i.key === body.intensity)) {
     return NextResponse.json({ error: "Unknown intensity." }, { status: 400 });
@@ -484,10 +496,14 @@ export async function POST(req: NextRequest) {
       ? storyBible.episodeCount + 1
       : storyBible.episodeCount;
 
+  // "Continue" plays the next season episode; file the song under that one so
+  // remixes and the next "continue" know where the story is.
+  const played = seasonEpisodeFor(body.episodeKey, body.action, storyBible.episodeCount);
+
   const createdEpisode = await db.episode.create({
     data: {
-      episodeTheme: body.episodeKey,
-      episodeLabel: body.episodeLabel,
+      episodeTheme: played?.key ?? body.episodeKey,
+      episodeLabel: played?.label ?? body.episodeLabel,
       customTopic: body.customTopic ?? null,
       customScript: script ?? null,
       duration: body.duration,

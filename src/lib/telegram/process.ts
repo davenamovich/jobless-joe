@@ -20,6 +20,7 @@ register("song", song.handleSong);
 register("lyrics", song.handleLyrics);
 register("episode", song.handleEpisode);
 register("next", song.handleNext);
+register("resetstory", song.handleResetStory);
 register("funnier", song.handleFunnier);
 register("sharper", song.handleSharper);
 register("attitude", song.handleAttitude);
