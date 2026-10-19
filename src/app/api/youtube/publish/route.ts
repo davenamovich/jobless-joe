@@ -9,13 +9,22 @@ export const maxDuration = 300;
 /**
  * POST /api/youtube/publish — upload an episode's finished video to YouTube.
  *
- * Body: { jobId, privacy?: "unlisted" | "public" | "private", captions?: boolean }
+ * Body: { jobId, privacy?: "unlisted" | "public" | "private", captions?: boolean,
+ *         title?: string, description?: string }
+ *
+ * title / description replace the generated ones (edits from the preview).
  *
  * Requires a rendered MP4: the caption track is timed against that render, so
  * there is nothing to upload before it exists (POST /api/video/mp4 first).
  */
 export async function POST(req: NextRequest) {
-  let body: { jobId?: string; privacy?: string; captions?: boolean };
+  let body: {
+    jobId?: string;
+    privacy?: string;
+    captions?: boolean;
+    title?: string;
+    description?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -29,6 +38,9 @@ export async function POST(req: NextRequest) {
     const result = await publishToYouTube(body.jobId, {
       privacy: body.privacy,
       captions: body.captions,
+      title: typeof body.title === "string" ? body.title : undefined,
+      description:
+        typeof body.description === "string" ? body.description : undefined,
     });
     const cfg = await loadBackendConfig();
     return NextResponse.json({

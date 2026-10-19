@@ -6,8 +6,9 @@
  * Everything from there to a real upload lives here:
  *
  *   1. Mirror the P&R MP4 onto our own disk (their render link lives ~24h).
- *   2. Build the metadata: title, description (Joe's hook, the free-course CTA
- *      and the tracked song link, then the lyrics), tags and category.
+ *   2. Build the metadata: the model's search-written title and opening lines
+ *      (SongOutput.youtube), then Joe's hook, the free-course CTA and the
+ *      tracked song link, then the lyrics; tags, hashtags and category.
  *   3. Build a caption track. The P&R page carries its own scene timeline
  *      (`BOUNDS`) plus the on-screen caption text per scene, so the SRT is in
  *      sync with the render — no speech-to-text pass needed.
@@ -24,7 +25,7 @@ import {
   type BackendConfig,
 } from "@/lib/ai-backend";
 import { mirrorMp4 } from "@/lib/video-service";
-import type { SongOutput } from "@/lib/joe-prompts";
+import type { SongOutput, YouTubeSeo } from "@/lib/joe-prompts";
 import { getLanguage } from "@/lib/languages";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -480,7 +481,78 @@ function durationSeconds(duration: string | undefined): number {
   return m ? Number(m[1]) : 0;
 }
 
-const HASHTAGS = "#JoblessJoe #AIForEveryone";
+const SHOW_HASHTAG = "#JoblessJoe";
+const FALLBACK_HASHTAGS = [SHOW_HASHTAG, "#AIForEveryone"];
+
+/** YouTube's hard limits: 100-char titles, 5000-char descriptions, 500 chars of tags. */
+const TITLE_MAX = 100;
+const DESCRIPTION_MAX = 5000;
+const TAGS_MAX_CHARS = 500;
+
+function oneLine(s: unknown): string {
+  return String(s ?? "").replace(/\s+/g, " ").trim();
+}
+
+/** YouTube rejects < and > anywhere in a title or description. */
+function stripAngles(s: string): string {
+  return s.replace(/[<>]/g, "");
+}
+
+function clip(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1).trimEnd()}…` : s;
+}
+
+function toHashtag(raw: unknown): string {
+  const word = oneLine(raw).replace(/^#+/, "").replace(/[^\p{L}\p{N}_]/gu, "");
+  return word ? `#${word}` : "";
+}
+
+/**
+ * Tidy the model's `youtube` block, or return undefined when it has nothing
+ * usable. Never throws: an episode with bad SEO copy still uploads.
+ */
+export function cleanYouTubeSeo(raw: unknown): YouTubeSeo | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Partial<Record<keyof YouTubeSeo, unknown>>;
+
+  const title = stripAngles(oneLine(r.title));
+  const description = stripAngles(
+    String(r.description ?? "")
+      .split("\n")
+      .map((line) => line.trim())
+      // Lyrics and hashtags are appended by the uploader; drop stray ones here.
+      .filter((line) => !/^(#[\p{L}\p{N}_]+\s*)+$/u.test(line))
+      .join("\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim()
+  );
+  const hashtags = Array.isArray(r.hashtags)
+    ? r.hashtags.map(toHashtag).filter(Boolean)
+    : [];
+  const tags = Array.isArray(r.tags)
+    ? r.tags.map((t) => oneLine(t).replace(/^#+/, "").replace(/[<>,"]/g, "").toLowerCase())
+        .filter((t) => t.length > 1 && t.length <= 60)
+    : [];
+
+  if (!title && !description) return undefined;
+  return { title, description, hashtags, tags };
+}
+
+/** Keep tags unique and inside YouTube's 500-character budget. */
+function fitTags(candidates: string[]): string[] {
+  const out: string[] = [];
+  let used = 0;
+  for (const raw of candidates) {
+    const tag = oneLine(raw).toLowerCase();
+    if (tag.length < 2 || tag.length > 60 || out.includes(tag)) continue;
+    // YouTube counts a multi-word tag with its surrounding quotes.
+    const cost = tag.length + (tag.includes(" ") ? 2 : 0) + (out.length ? 1 : 0);
+    if (used + cost > TAGS_MAX_CHARS) break;
+    out.push(tag);
+    used += cost;
+  }
+  return out;
+}
 
 export function buildYouTubeMetadata(input: {
   episodeTitle: string;
@@ -489,50 +561,68 @@ export function buildYouTubeMetadata(input: {
   postCopy: string;
   languageKey: string;
   privacy: string;
+  /** Hand edits from the preview; they win over everything generated. */
+  overrides?: { title?: string; description?: string };
 }): YouTubeMetadata {
   const { output, languageKey } = input;
   const lang = getLanguage(languageKey);
-
-  // Title: Joe's episode title, with the show name unless it's already there.
-  let title = (input.episodeTitle || output.episodeTitle || "Jobless Joe").trim();
-  if (!/jobless joe/i.test(title)) title = `${title} — Jobless Joe`;
-  if (title.length > 100) title = `${title.slice(0, 97).trimEnd()}…`;
-
-  // Description: what Joe says first, then the lyrics, then the hashtags.
-  const sections: string[] = [];
-  if (input.postCopy.trim()) sections.push(input.postCopy.trim());
-
-  const lyrics = (output.lyrics ?? "").trim();
-  if (lyrics) sections.push(`🎙️ Lyrics\n${lyrics}`);
-
-  const bits = [`🎧 Performed by Jobless Joe`, `🌍 ${lang.nativeLabel} (${lang.label})`];
+  const seo = cleanYouTubeSeo(output.youtube);
   const seconds = durationSeconds(output.duration);
-  if (seconds > 0 && seconds <= 180) bits.push("#Shorts");
-  sections.push(bits.join(" · "));
-  sections.push(HASHTAGS);
+  const isShort = seconds > 0 && seconds <= 180;
 
-  let description = sections.join("\n\n").trim();
-  if (description.length > 5000) {
-    description = `${description.slice(0, 4990).trimEnd()}…`;
+  // Title: the search-written one when the model gave us one, else Joe's
+  // episode title with the show name.
+  let title = seo?.title || oneLine(input.episodeTitle || output.episodeTitle) || "Jobless Joe";
+  if (!seo?.title && !/jobless joe/i.test(title)) title = `${title} | Jobless Joe`;
+  const override = stripAngles(oneLine(input.overrides?.title));
+  title = clip(override || stripAngles(title), TITLE_MAX);
+
+  // Hashtags: up to three, show tag first. YouTube shows the first three
+  // above the title, and ignores every hashtag if there are more than 15.
+  const hashtags = Array.from(
+    new Set([SHOW_HASHTAG, ...(seo?.hashtags ?? []), ...FALLBACK_HASHTAGS])
+  ).slice(0, 3);
+  if (isShort) hashtags.push("#Shorts");
+
+  const overrideDescription = stripAngles(String(input.overrides?.description ?? "").trim());
+  let description: string;
+  if (overrideDescription) {
+    description = overrideDescription;
+  } else {
+    // Description: the search snippet first (YouTube shows ~2 lines in
+    // results), then Joe's caption with the course link, then the lyrics.
+    const sections: string[] = [];
+    if (seo?.description) sections.push(seo.description);
+    if (input.postCopy.trim()) sections.push(stripAngles(input.postCopy.trim()));
+
+    const lyrics = stripAngles((output.lyrics ?? "").trim());
+    if (lyrics) sections.push(`🎙️ Lyrics\n${lyrics}`);
+
+    sections.push(
+      [`🎧 Performed by Jobless Joe`, `🌍 ${lang.nativeLabel} (${lang.label})`].join(" · ")
+    );
+    const tagLine = hashtags.join(" ");
+
+    // Lyrics are the only part worth trimming: keep the hashtag line intact.
+    description = sections.join("\n\n").trim();
+    const room = DESCRIPTION_MAX - tagLine.length - 2;
+    if (description.length > room) description = clip(description, room);
+    description = `${description}\n\n${tagLine}`;
   }
+  description = clip(description, DESCRIPTION_MAX);
 
-  // Tags: descriptive only — nothing invented about the song.
-  const tags = Array.from(
-    new Set(
-      [
-        "jobless joe",
-        "ai song",
-        "ai comedy",
-        "ai for everyone",
-        "unemployed",
-        "crooner",
-        lang.label.toLowerCase(),
-        ...output.hooks.slice(0, 2).map((h) => h.trim().toLowerCase()),
-      ]
-        .map((t) => t.replace(/\s+/g, " ").trim())
-        .filter((t) => t.length > 1 && t.length <= 60)
-    )
-  ).slice(0, 15);
+  // Tags: the model's search phrases first, then the show's standing ones.
+  const tags = fitTags([
+    ...(seo?.tags ?? []),
+    "jobless joe",
+    "funny ai song",
+    "ai comedy",
+    "ai for everyone",
+    "unemployed",
+    "crooner",
+    lang.label.toLowerCase(),
+    ...(seo ? [] : output.hooks.slice(0, 2)),
+  ]);
 
   return {
     title,
@@ -689,7 +779,13 @@ export interface YouTubePublishResult {
  */
 export async function publishToYouTube(
   jobId: string,
-  opts: { privacy?: string; captions?: boolean } = {}
+  opts: {
+    privacy?: string;
+    captions?: boolean;
+    /** Hand edits made in the preview. */
+    title?: string;
+    description?: string;
+  } = {}
 ): Promise<YouTubePublishResult> {
   const cfg = await loadBackendConfig();
   if (!isYouTubeConnected(cfg)) {
@@ -724,6 +820,7 @@ export async function publishToYouTube(
     privacy: ["public", "private", "unlisted"].includes(privacy)
       ? privacy
       : "unlisted",
+    overrides: { title: opts.title, description: opts.description },
   });
 
   await db.videoJob.update({
