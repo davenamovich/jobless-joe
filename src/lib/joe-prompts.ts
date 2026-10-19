@@ -9,7 +9,14 @@
  * very first line.
  */
 
-import { RETIRED_EPISODES, SEASON, seasonBrief, seasonEpisodeFor } from "@/lib/season";
+import {
+  DEFAULT_ARC,
+  RETIRED_EPISODES,
+  SEASON,
+  seasonBrief,
+  seasonEpisodeFor,
+  type StoryArc,
+} from "@/lib/season";
 import { getCroonerStyle } from "@/lib/crooner-styles";
 import { getLanguage } from "@/lib/languages";
 import { budgetFor, budgetBrief } from "@/lib/lyric-budget";
@@ -143,7 +150,7 @@ export const ACTIONS: {
     shortLabel: "Continue",
     emoji: "➡️",
     instruction:
-      "Produce the next episode of Joe's Season 1 story (see SEASON 1 STORY ARC for which one), picking up from the most recent episode. Do not repeat the same jokes.",
+      "Produce the next episode of Joe's story (see STORY ARC for which one), picking up from the most recent episode. Do not repeat the same jokes.",
   },
   {
     key: "alt-hooks",
@@ -664,6 +671,8 @@ export interface GenerateRequest {
   language?: string;
   action: ActionKey;
   storyBible: StoryBible;
+  /** The active story arc (Season 1 unless one was written with Ralph). */
+  arc?: StoryArc;
   previousEpisode?: {
     title: string;
     lyrics: string;
@@ -673,7 +682,13 @@ export interface GenerateRequest {
 }
 
 export function buildUserPrompt(req: GenerateRequest): string {
-  const seasonEpisode = seasonEpisodeFor(req.episodeKey, req.action, req.storyBible.episodeCount);
+  const arc = req.arc ?? DEFAULT_ARC;
+  const seasonEpisode = seasonEpisodeFor(
+    req.episodeKey,
+    req.action,
+    req.storyBible.episodeCount,
+    arc
+  );
   // Past the season finale, "continue" has no preset episode: the season
   // brief tells the model to improvise the next bootcamp story.
   const pastFinale =
@@ -729,7 +744,7 @@ How to use the script:
   // Series songs see the whole season and where this one sits in it.
   const seasonBlock =
     seasonEpisode || pastFinale
-      ? `\n${seasonBrief(seasonEpisode)}\n`
+      ? `\n${seasonBrief(seasonEpisode, arc)}\n`
       : "";
 
   return `EPISODE REQUEST

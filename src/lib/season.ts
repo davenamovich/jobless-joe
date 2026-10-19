@@ -20,6 +20,7 @@ export interface SeasonAct {
 export interface SeasonEpisode {
   key: string;
   label: string;
+  /** 1-based act number. */
   act: number;
   /** The one situation the song is about. */
   arc: string;
@@ -136,60 +137,110 @@ export const RETIRED_EPISODES: { key: string; label: string; arc: string }[] = [
   { key: "next-chapter", label: "The Next Chapter", arc: "Joe hints at where the story is going next. Curiosity rises." },
 ];
 
-/** Where an episode sits in the season, or null for a retired/custom one. */
-export function seasonPosition(key: string): number | null {
-  const i = SEASON.findIndex((e) => e.key === key);
+/**
+ * A whole story arc: the built-in Season 1, or one written with Ralph in the
+ * writers' room (ralph.ts) and saved as the active arc.
+ */
+export interface StoryArc {
+  title: string;
+  premise: string;
+  tone: string;
+  /** Story rules that hold in every episode. */
+  rules: string[];
+  characters: { name: string; role: string; catchphrase?: string }[];
+  acts: SeasonAct[];
+  episodes: SeasonEpisode[];
+  /** Where the season lands, and the one next step it points viewers to. */
+  reveal: string;
+  cta: string;
+}
+
+export const DEFAULT_ARC: StoryArc = {
+  title: "Jobless Joe, Season 1",
+  premise:
+    "A laid-off crooner can't get past the bots of a broken job market, discovers AI, gets paid on his own terms and opens an AI bootcamp for everyone else who got written off.",
+  tone: "Relatable first, then absurd. Deadpan lounge-crooner swagger about painfully real job-hunt moments.",
+  rules: [
+    "Every episode is about the job market, Joe adopting AI, or his AI bootcamp.",
+    "One situation per episode that a job seeker recognizes instantly.",
+    "Joe is no genius: he's an ordinary guy who learned the tools.",
+  ],
+  characters: [{ name: "Jobless Joe", role: "Laid-off stick-figure crooner" }],
+  acts: ACTS,
+  episodes: SEASON,
+  reveal: "Anyone written off by the job market can use AI to build their own way in.",
+  cta: "Join Jobless Joe's AI Bootcamp.",
+};
+
+/** Where an episode sits in an arc, or null for a retired/custom one. */
+export function seasonPosition(key: string, arc: StoryArc = DEFAULT_ARC): number | null {
+  const i = arc.episodes.findIndex((e) => e.key === key);
   return i < 0 ? null : i;
 }
 
 /**
- * The episode "Continue the story" plays next: the season in order by how many
+ * The episode "Continue the story" plays next: the arc in order by how many
  * series episodes exist, or null once the season is over.
  */
-export function nextSeasonEpisode(episodeCount: number): SeasonEpisode | null {
-  return SEASON[Math.max(0, episodeCount)] ?? null;
+export function nextSeasonEpisode(
+  episodeCount: number,
+  arc: StoryArc = DEFAULT_ARC
+): SeasonEpisode | null {
+  return arc.episodes[Math.max(0, episodeCount)] ?? null;
 }
 
 /**
- * The songwriter's view of the season: every act, with the episodes already
+ * The songwriter's view of the arc: every act, with the episodes already
  * sung, the one being written now and the ones still to come.
  */
-export function seasonBrief(current: SeasonEpisode | null): string {
-  const at = current ? SEASON.indexOf(current) : SEASON.length;
+export function seasonBrief(current: SeasonEpisode | null, arc: StoryArc = DEFAULT_ARC): string {
+  const at = current ? arc.episodes.indexOf(current) : arc.episodes.length;
   const lines: string[] = [];
-  for (const act of ACTS) {
+  for (const act of arc.acts) {
     lines.push(`ACT ${act.n}: ${act.title} — ${act.theme}`);
-    SEASON.forEach((ep, i) => {
+    arc.episodes.forEach((ep, i) => {
       if (ep.act !== act.n) return;
       const mark = i < at ? "done" : i === at ? "NOW" : "later";
       lines.push(`  ${i + 1}. [${mark}] ${ep.label}`);
     });
   }
+  const custom = arc !== DEFAULT_ARC;
+  const world = custom
+    ? `Premise: ${arc.premise}
+Tone: ${arc.tone}
+Cast (use by name when it fits, never force): ${arc.characters
+        .map((c) => `${c.name} (${c.role}${c.catchphrase ? `, "${c.catchphrase}"` : ""})`)
+        .join("; ")}
+Story rules (always): ${arc.rules.join(" · ")}
+Where it lands: ${arc.reveal}
+`
+    : "";
   const now = current
     ? `
-THIS EPISODE: ${SEASON.indexOf(current) + 1}. ${current.label} (Act ${current.act})
+THIS EPISODE: ${arc.episodes.indexOf(current) + 1}. ${current.label} (Act ${current.act})
 - The situation: ${current.arc}
 - The relatable truth the hook is built on: ${current.relatable}
-- Stay inside this episode. Don't jump ahead to later episodes (no bootcamp before Act 4, no paycheck before Act 3); a teaser for the next one goes in nextEpisodeTeaser only.`
+- Stay inside this episode. Don't jump ahead to later episodes or acts; a teaser for the next one goes in nextEpisodeTeaser only.`
     : `
 THE SEASON IS OVER: Joe now runs Jobless Joe's AI Bootcamp. Write the next episode about running it: a new student, a new job-market absurdity they bring in, and how AI helps them through it.`;
-  return `SEASON 1 STORY ARC
-==================
-${lines.join("\n")}
+  return `STORY ARC: ${arc.title.toUpperCase()}
+${"=".repeat(Math.min(60, arc.title.length + 11))}
+${world}${lines.join("\n")}
 ${now}`;
 }
 
 /**
- * The season episode a request is writing: the next one in order for
- * "continue", the picked one otherwise, null for a custom topic or a
- * retired episode (and for "continue" once the season is over).
+ * The arc episode a request is writing: the next one in order for
+ * "continue", the picked one otherwise, null for a custom topic or an
+ * episode outside the arc (and for "continue" once the season is over).
  */
 export function seasonEpisodeFor(
   episodeKey: string,
   action: string,
-  episodeCount: number
+  episodeCount: number,
+  arc: StoryArc = DEFAULT_ARC
 ): SeasonEpisode | null {
   if (episodeKey === "custom") return null;
-  if (action === "continue") return nextSeasonEpisode(episodeCount);
-  return SEASON.find((e) => e.key === episodeKey) ?? null;
+  if (action === "continue") return nextSeasonEpisode(episodeCount, arc);
+  return arc.episodes.find((e) => e.key === episodeKey) ?? null;
 }

@@ -31,7 +31,6 @@ import {
   TrendingUp,
 } from "lucide-react";
 import type { StoryBible } from "@/lib/joe-prompts";
-import { SEASON } from "@/lib/season";
 
 interface Props {
   storyBible: StoryBible | null;
@@ -60,7 +59,7 @@ export function StoryBibleCard({ storyBible, onReset, resetting }: Props) {
             <Mic className="h-5 w-5" />
             <CardTitle className="font-serif text-xl">Joe Right Now</CardTitle>
             <Badge variant="secondary" className="ml-auto">
-              Episode {storyBible.episodeCount} of {SEASON.length}
+              Episode {storyBible.episodeCount}
             </Badge>
             {onReset && (
               <AlertDialog>
@@ -80,7 +79,7 @@ export function StoryBibleCard({ storyBible, onReset, resetting }: Props) {
                     <AlertDialogTitle>Start Joe's story over?</AlertDialogTitle>
                     <AlertDialogDescription>
                       Joe's story memory goes back to Season 1, episode 1, and
-                      &quot;Continue the story&quot; plays &quot;{SEASON[0].label}&quot; next.
+                      &quot;Continue the story&quot; plays the arc&apos;s first episode next.
                       Songs you've already made are kept.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
