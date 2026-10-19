@@ -89,6 +89,8 @@ export const BOT_COMMANDS: { command: string; description: string }[] = [
   { command: "lyrics", description: "Joe sings your own lyrics" },
   { command: "episode", description: "Sing a story episode" },
   { command: "next", description: "Continue the story" },
+  { command: "arc", description: "The season's story arc" },
+  { command: "ralph", description: "Pitch ideas to Ralph, Joe's head writer" },
   { command: "funnier", description: "Remix the last song: funnier" },
   { command: "sharper", description: "Remix the last song: sharper punchlines" },
   { command: "attitude", description: "Remix the last song: more attitude" },

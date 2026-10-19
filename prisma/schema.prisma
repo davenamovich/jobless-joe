@@ -280,3 +280,12 @@ model AudioTrack {
   @@unique([episodeId, voice])
   @@index([episodeId])
 }
+
+/// The active story arc, written with Ralph in the writers' room. No row means
+/// the built-in Season 1 (src/lib/season.ts) is the arc.
+model StoryArc {
+  id        String   @id @default("current")
+  updatedAt DateTime @updatedAt
+  /// JSON StoryArc
+  arc       String
+}

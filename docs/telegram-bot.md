@@ -69,7 +69,7 @@ app can't reach itself there. One song at a time per chat.
    TELEGRAM_WEBHOOK_URL=https://<public-host>/api/telegram/webhook
    TELEGRAM_WEBHOOK_SECRET=<openssl rand -hex 24>
    TELEGRAM_ALLOWED_CHAT_IDS=        # optional, comma-separated; empty = public
-   TELEGRAM_ADMIN_CHAT_IDS=          # chats allowed to /resetstory (restart Joe's shared story)
+   TELEGRAM_ADMIN_CHAT_IDS=          # chats allowed to /resetstory, /arc new and /arc season1
    HERENOW_API_KEY=                  # optional; without it pages expire after 24h
    ```
 

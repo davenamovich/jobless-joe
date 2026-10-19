@@ -11,7 +11,7 @@ import type { TelegramMessage } from "../types";
 import { updateSession } from "../sessions";
 import { db } from "@/lib/db";
 import { resetStoryBible } from "@/lib/story-bible";
-import { SEASON } from "@/lib/season";
+import { isAdminChat } from "./ralph";
 import { CUSTOM_LABEL, requestLyricSong, requestTopicSong } from "../handlers/message";
 import { chatPrefs, escapeHtml, startSong } from "../song-flow";
 import { ACTIONS, DURATIONS, EPISODES, INTENSITIES, type ActionKey } from "@/lib/joe-prompts";
@@ -71,18 +71,14 @@ export async function handleEpisode(args: string[], msg: TelegramMessage) {
  * TELEGRAM_ADMIN_CHAT_IDS (comma-separated) may reset it.
  */
 export async function handleResetStory(_args: string[], msg: TelegramMessage) {
-  const admins = (process.env.TELEGRAM_ADMIN_CHAT_IDS ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (!admins.includes(String(msg.chat.id))) {
+  if (!isAdminChat(msg.chat.id)) {
     await say(msg.chat.id, `Only the show's producer can restart Joe's story.`, "send reset refused");
     return;
   }
   await resetStoryBible();
   await say(
     msg.chat.id,
-    `🎬 Story reset. /next plays Season 1, episode 1: <b>${escapeHtml(SEASON[0].label)}</b>.`,
+    `🎬 Story reset. /next plays episode 1 of the arc (see /arc).`,
     "send reset done",
   );
 }

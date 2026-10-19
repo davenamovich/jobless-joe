@@ -9,6 +9,7 @@ import { handleHelp } from "./commands/help";
 import * as song from "./commands/song";
 import { handleMeme } from "./commands/meme";
 import { handleVideo, handleMp4Callback, MP4_CALLBACK_PREFIX } from "./commands/video";
+import { handleArc, handleRalph } from "./commands/ralph";
 import { answerCallbackQuery } from "./types";
 import { handleNonCommandMessage } from "./handlers/message";
 
@@ -21,6 +22,8 @@ register("lyrics", song.handleLyrics);
 register("episode", song.handleEpisode);
 register("next", song.handleNext);
 register("resetstory", song.handleResetStory);
+register("ralph", handleRalph);
+register("arc", handleArc);
 register("funnier", song.handleFunnier);
 register("sharper", song.handleSharper);
 register("attitude", song.handleAttitude);

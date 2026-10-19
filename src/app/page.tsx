@@ -22,6 +22,7 @@ import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
 import { SettingsDialog } from "@/components/joe/SettingsDialog";
 import { SongPanel } from "@/components/joe/SongPanel";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
+import { WritersRoomDialog } from "@/components/joe/WritersRoomDialog";
 import { WallManager } from "@/components/joe/WallManager";
 import type { LyricFit } from "@/lib/lyric-budget";
 import {
@@ -543,11 +544,9 @@ export default function Home() {
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <BookOpen className="h-4 w-4 text-primary" />
                   <h2 className="font-serif text-lg">Story Bible</h2>
-                  {storyBible && (
-                    <span className="text-xs text-muted-foreground ml-auto">
-                      Episode {storyBible.episodeCount}
-                    </span>
-                  )}
+                  <span className="ml-auto">
+                    <WritersRoomDialog onStoryChanged={setStoryBible} />
+                  </span>
                 </div>
                 <StoryBibleCard
                   storyBible={storyBible}

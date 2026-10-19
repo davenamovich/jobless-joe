@@ -27,7 +27,8 @@ import { CROONER_STYLES } from "@/lib/crooner-styles";
 import { DEFAULT_LANGUAGE, isLanguageKey } from "@/lib/languages";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { cleanYouTubeSeo } from "@/lib/youtube-service";
-import { SEASON, seasonEpisodeFor } from "@/lib/season";
+import { seasonEpisodeFor } from "@/lib/season";
+import { loadArc } from "@/lib/ralph";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -310,8 +311,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
+  // The arc the series follows: one written with Ralph, else Season 1.
+  const { arc } = await loadArc();
   const validEpisode =
-    body.episodeKey === "custom" || isEpisodeKey(body.episodeKey);
+    body.episodeKey === "custom" ||
+    isEpisodeKey(body.episodeKey) ||
+    arc.episodes.some((e) => e.key === body.episodeKey);
   if (!validEpisode) {
     return NextResponse.json({ error: "Unknown episode theme." }, { status: 400 });
   }
@@ -320,8 +325,8 @@ export async function POST(req: NextRequest) {
   if (body.action === "continue" && body.episodeKey === "custom") {
     body = {
       ...body,
-      episodeKey: SEASON[0].key,
-      episodeLabel: SEASON[0].label,
+      episodeKey: arc.episodes[0].key,
+      episodeLabel: arc.episodes[0].label,
       customTopic: undefined,
       customScript: undefined,
     };
@@ -373,6 +378,7 @@ export async function POST(req: NextRequest) {
     language,
     action: body.action,
     storyBible,
+    arc,
     previousEpisode,
   });
 
@@ -498,7 +504,7 @@ export async function POST(req: NextRequest) {
 
   // "Continue" plays the next season episode; file the song under that one so
   // remixes and the next "continue" know where the story is.
-  const played = seasonEpisodeFor(body.episodeKey, body.action, storyBible.episodeCount);
+  const played = seasonEpisodeFor(body.episodeKey, body.action, storyBible.episodeCount, arc);
 
   const createdEpisode = await db.episode.create({
     data: {
