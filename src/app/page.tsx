@@ -23,6 +23,7 @@ import { SettingsDialog } from "@/components/joe/SettingsDialog";
 import { SongPanel } from "@/components/joe/SongPanel";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
 import { WritersRoomDialog } from "@/components/joe/WritersRoomDialog";
+import { JoeChatDialog } from "@/components/joe/JoeChatDialog";
 import { WallManager } from "@/components/joe/WallManager";
 import type { LyricFit } from "@/lib/lyric-budget";
 import {
@@ -331,10 +332,18 @@ export default function Home() {
   }, []);
 
   // === Generate / refine ===
+  const selectedKey = episodeKey;
+  const topicInput = customTopic;
   const handleAction = useCallback(
-    async (action: ActionKey) => {
+    async (
+      action: ActionKey,
+      // "Make it a song" from Chat with Joe sings a topic before the controls catch up.
+      override?: { customTopic: string }
+    ) => {
+      const episodeKey = override ? "custom" : selectedKey;
+      const customTopic = override?.customTopic ?? topicInput;
       const isCustom = episodeKey === "custom";
-      const script = customScript.trim();
+      const script = override ? "" : customScript.trim();
       // A script supplies the content itself, so it stands in for the topic.
       if (isCustom && !customTopic.trim() && script.length < MIN_SCRIPT_CHARS) {
         toast.error("Type a custom topic or paste a script before generating.");
@@ -407,8 +416,8 @@ export default function Home() {
       }
     },
     [
-      episodeKey,
-      customTopic,
+      selectedKey,
+      topicInput,
       customScript,
       duration,
       intensity,
@@ -417,6 +426,17 @@ export default function Home() {
       language,
       selectedEpisodeId,
     ]
+  );
+
+  // Chat with Joe → song: show the topic in the controls and sing it now.
+  const makeSongFromChat = useCallback(
+    (topic: string) => {
+      setEpisodeKey("custom");
+      setCustomTopic(topic);
+      setCustomScript("");
+      void handleAction("generate", { customTopic: topic });
+    },
+    [handleAction]
   );
 
   // === Pick a historical episode to view ===
@@ -471,7 +491,8 @@ export default function Home() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)_360px] gap-6">
           {/* Left column: Controls */}
-          <aside className="lg:sticky lg:top-20 self-start">
+          <aside className="lg:sticky lg:top-20 self-start space-y-3">
+            <JoeChatDialog onMakeSong={makeSongFromChat} disabled={isLoading} />
             <ControlPanel
               episodeKey={episodeKey}
               setEpisodeKey={setEpisodeKey}
