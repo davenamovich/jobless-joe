@@ -56,7 +56,7 @@ function internalBaseUrl(): string {
   return `http://127.0.0.1:${process.env.PORT || 3000}`;
 }
 
-async function postJson<T>(path: string, body: unknown): Promise<T> {
+export async function postJson<T>(path: string, body: unknown): Promise<T> {
   const res = await fetch(`${internalBaseUrl()}${path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -184,7 +184,7 @@ export async function startSong(msg: TelegramMessage, req: SongRequest): Promise
     await update(
       `🎶 <b>${title}</b>\n\n${page.url}${stage}${expiry}\n\n` +
         `Remix it: /funnier /sharper /attitude /ending · Keep going: /next\n` +
-        `🎨 Make memes of it: /meme`,
+        `🎨 Memes: /meme · 🎬 Stickman video: /video`,
     );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
