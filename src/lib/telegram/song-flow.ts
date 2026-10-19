@@ -19,7 +19,7 @@ import { DEFAULT_LANGUAGE, isLanguageKey } from "@/lib/languages";
 import { ensureAudioTrack } from "@/lib/tts-service";
 import { songPageStickmanEnabled } from "@/lib/song-page";
 import { tg, safeReply, tryAcquireRateLimit } from "./bot";
-import { getSession } from "./sessions";
+import { getSession, updateSession } from "./sessions";
 import type { TelegramMessage } from "./types";
 
 export const DEFAULT_DURATION: DurationKey = "60s";
@@ -46,6 +46,8 @@ export function chatPrefs(msg: TelegramMessage) {
     intensity: isIntensityKey(sess.intensity) ? sess.intensity : DEFAULT_INTENSITY,
     croonerStyle: isStyleKey(sess.croonerStyle) ? sess.croonerStyle : DEFAULT_STYLE,
     language: isLanguageKey(sess.language) ? sess.language : DEFAULT_LANGUAGE,
+    /** This chat's newest song, so remixes never pick up another chat's. */
+    lastEpisodeId: typeof sess.lastEpisodeId === "string" ? sess.lastEpisodeId : undefined,
   };
 }
 
@@ -89,6 +91,8 @@ export interface SongRequest {
   /** User's own lyrics — Joe keeps their beats and sings them. */
   script?: string;
   action: ActionKey;
+  /** For refine actions: the song being reworked. */
+  episodeId?: string;
   /** First line of the status message, already HTML-escaped. */
   intro: string;
 }
@@ -156,8 +160,11 @@ export async function startSong(msg: TelegramMessage, req: SongRequest): Promise
         language: prefs.language,
         target: "job-seekers",
         action: req.action,
+        episodeId: req.episodeId,
       },
     );
+    // /funnier, /next… rework this chat's song, not whatever another chat made last.
+    updateSession(chatId, { lastEpisodeId: gen.episodeId });
     const title = escapeHtml(gen.output.episodeTitle);
 
     await update(`🎙️ <b>${title}</b>\n\nLyrics done. Joe is in the booth recording (this can take a few minutes)…`);

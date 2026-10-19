@@ -9,6 +9,14 @@
  * very first line.
  */
 
+import {
+  DEFAULT_ARC,
+  RETIRED_EPISODES,
+  SEASON,
+  seasonBrief,
+  seasonEpisodeFor,
+  type StoryArc,
+} from "@/lib/season";
 import { getCroonerStyle } from "@/lib/crooner-styles";
 import { getLanguage } from "@/lib/languages";
 import { budgetFor, budgetBrief } from "@/lib/lyric-budget";
@@ -60,24 +68,15 @@ export const INTENSITIES: {
   { key: "unhinged", label: "Absolutely unhinged (but lovable)", hint: "Glitter cannon of jokes." },
 ];
 
-export const EPISODES: { key: string; label: string; arc: string }[] = [
-  { key: "unemployed-intro", label: "The Unemployed Introduction", arc: "Joe introduces himself and the absurdity of being unemployable in an AI age." },
-  { key: "rejection-blues", label: "The Rejection Letter Blues", arc: "Joe reads yet another rejection. Then another. They get progressively weirder." },
-  { key: "joe-discovers-ai", label: "Joe Discovers AI", arc: "Joe talks to an AI for the first time. The AI is more polite than his last recruiter." },
-  { key: "joe-discovers-vibe-coding", label: "Joe Discovers Vibe Coding", arc: "Joe learns he can describe what he wants and watch it appear." },
-  { key: "joe-builds-first-app", label: "Joe Builds His First App", arc: "Joe ships something. It is rough. He is impossibly proud." },
-  { key: "joe-roasts-silicon-valley", label: "Joe Roasts Silicon Valley", arc: "Joe has opinions about founders who burn billions building nothing." },
-  { key: "joe-vs-college-degree", label: "Joe vs. The College Degree", arc: "Joe debates whether the four-year degree is still the gatekeeper." },
-  { key: "joe-vs-resume", label: "Joe vs. The Résumé", arc: "Joe wonders aloud why we still describe humans in bullet points." },
-  { key: "joe-explains-ai-family", label: "Joe Explains AI to His Family", arc: "Joe's aunt thinks AI is a cabal. Joe tries to bring her along gently." },
-  { key: "joe-starts-business", label: "Joe Starts His Own Business", arc: "Joe hangs a shingle. It is digital. He has no shingle budget." },
-  { key: "joe-ai-expert-overnight", label: "Joe Becomes an AI Expert Overnight", arc: "Joe is now being called an expert. He finds this hilarious." },
-  { key: "joe-vs-vcs", label: "Joe Challenges the Venture Capitalists", arc: "Joe meets a VC who asks for his TAM. Joe defines TAM differently." },
-  { key: "joe-first-customer", label: "Joe's First Customer", arc: "Someone pays Joe real money. He has opinions about this." },
-  { key: "joe-builds-empire", label: "Joe Builds His Digital Empire", arc: "Joe's empire is small, but it is his, and it has a coffee budget." },
-  { key: "bootcamp-revelation", label: "The Bootcamp Revelation", arc: "Joe realizes he can teach other people what he half-learned by accident." },
-  { key: "next-chapter", label: "The Next Chapter", arc: "Joe hints at where the story is going next. Curiosity rises." },
-];
+/** The season's episodes, in order (see season.ts). */
+export const EPISODES: { key: string; label: string; arc: string }[] = SEASON.map(
+  ({ key, label, arc }) => ({ key, label, arc })
+);
+
+/** Every episode key a request may name: the season plus retired ones. */
+export function isEpisodeKey(key: string): boolean {
+  return EPISODES.some((e) => e.key === key) || RETIRED_EPISODES.some((e) => e.key === key);
+}
 
 export const TARGETS: { key: string; label: string }[] = [
   { key: "job-seekers", label: "Job seekers" },
@@ -151,7 +150,7 @@ export const ACTIONS: {
     shortLabel: "Continue",
     emoji: "➡️",
     instruction:
-      "Produce the next episode of Joe's story, continuing from the most recent one. Advance the arc. Do not repeat the same jokes.",
+      "Produce the next episode of Joe's story (see STORY ARC for which one), picking up from the most recent episode. Do not repeat the same jokes.",
   },
   {
     key: "alt-hooks",
@@ -198,6 +197,12 @@ export interface SongOutput {
   nextEpisodeTeaser: string;
   nextEpisodeTitle: string;
 
+  /**
+   * Search-facing YouTube copy. Optional: episodes written before this field
+   * existed don't have it, and the uploader falls back to the episode title.
+   */
+  youtube?: YouTubeSeo;
+
   storyBibleUpdate: {
     currentSituation: string;
     learnedSkills: string[];
@@ -208,6 +213,17 @@ export interface SongOutput {
     unresolvedStorylines: string[];
     nextDevelopment: string;
   };
+}
+
+export interface YouTubeSeo {
+  /** Under 70 characters, the searchable topic first. */
+  title: string;
+  /** Opens with the two lines YouTube shows in search; no lyrics, no links. */
+  description: string;
+  /** Up to three, each starting with #. */
+  hashtags: string[];
+  /** Search phrases people would actually type. */
+  tags: string[];
 }
 
 /**
@@ -228,18 +244,15 @@ export interface StoryBible {
 
 export const EMPTY_STORY_BIBLE: StoryBible = {
   currentSituation:
-    "Jobless Joe is unemployed, underappreciated, and one bad coffee away from writing a strongly worded letter to the entire economy. He has not yet discovered AI.",
+    "Season 1, before episode 1. Joe has a steady job, a tie he's proud of, and no idea that an email signed \"The Team\" is about to lay him off. He has never used AI.",
   learnedSkills: [],
   builtThings: [],
   characters: ["Jobless Joe"],
   runningJokes: [],
   previousPunchlines: [],
-  unresolvedStorylines: [
-    "Joe still needs a job.",
-    "Joe has not yet heard of AI.",
-  ],
+  unresolvedStorylines: [],
   nextDevelopment:
-    "Joe discovers, in the most ridiculous way possible, that there is a thing called AI.",
+    "Episode 1: Joe is laid off by email and walks into a job market with 400 applicants per opening.",
   episodeCount: 0,
 };
 
@@ -269,6 +282,7 @@ Write EVERY audience-facing field in ${lang.label}:
 - adCopy: primaryTexts, headlines, description, cta
 - videoBrief: visualOpening, performanceShot, onScreenCaptions, sceneChanges, visualPunchline, finalFrame
 - nextEpisodeTeaser, nextEpisodeTitle
+- youtube: title, description, hashtags, tags
 
 Keep these in English, always:
 - the brand names "Jobless Joe" and "Jobless Joe's Bootcamp"
@@ -299,6 +313,19 @@ Joe's attitude (always honor this):
 - He especially enjoys making fun of the people who told him he couldn't do it.
 
 Joe is lovable, rebellious, self-aware, and hilariously overconfident. His confidence grows faster than his actual expertise — and that is where a lot of the comedy lives.
+
+=========================
+STAY ON MESSAGE (NON-NEGOTIABLE)
+=========================
+
+Every Jobless Joe song is about ONE of these, and nothing else:
+1. The reality of today's job market: no jobs, ghosting recruiters, ATS robots, endless rounds of interviews, "entry level, 5 years' experience", layoffs, credential inflation.
+2. Joe adopting AI: the first awkward prompt, building things he was told he couldn't, beating the people who rejected him.
+3. Joe launching and running his AI bootcamp: teaching other unemployed people to use AI, the chaos of starting it, why it matters.
+
+The song must be one a job seeker forwards to a friend because it is painfully true and funny. Relatable first, then the twist. Write for virality: a hook in the first line, one quotable line, and a punchline people repeat.
+
+Off-topic songs are a failure. Food, cooking, pets, dating, sports, holidays or any random subject are never the subject of a song. If a custom topic or request names something unrelated, use it ONLY as a prop or setting inside Joe's job-hunt or AI story (e.g. "tacos" → Joe can't afford tacos since the layoff, so he gets AI to build a résumé tool and sells it for taco money). The job market, AI or the bootcamp must be the point of every verse's joke, and the title must say so.
 
 =========================
 MUSICAL STYLE: CROONER COMEDY
@@ -371,7 +398,19 @@ Every song must have a miniature story arc:
 5. THE PAYOFF — A killer joke, memorable lyric, or unexpected reveal.
 6. THE CLIFFHANGER — A hint that Joe's next adventure will be even more outrageous.
 
-For very short songs (15s, 30s), compress the structure without losing the story. The shorter the song, the harder the hook has to work.
+For very short songs (15s, 30s), compress the structure without losing the story. The shorter the song, the harder the hook has to work. For songs of 60s or less, the arc is just PROBLEM → AI TURN → PUNCHLINE; the cliffhanger goes in nextEpisodeTeaser, not in the lyrics.
+
+=========================
+IT HAS TO MAKE SENSE
+=========================
+
+A stranger hearing the song once must be able to retell it in one sentence ("Joe got rejected by a bot for a job that needs 10 years of a 2-year-old tool, so he used AI to …"). Write that sentence for yourself first, then write only lyrics that tell it.
+
+- ONE situation, ONE premise, told in order. Every line follows from the line before it.
+- Say what literally happens before getting clever. Wordplay rides on a clear story; it never replaces one.
+- No random images, mixed metaphors or rhymes chosen only because they rhyme. If a line doesn't make sense said out loud, cut it.
+- Call back at most ONE running joke or character from the story bible, and only if it fits this song's situation. Never stack callbacks.
+- The chorus states the premise in plain words, so a listener knows what the song is about by the first chorus.
 
 =========================
 SECTION TAGS
@@ -437,6 +476,8 @@ STORY BIBLE CONTINUITY
 
 Jobless Joe is the star of an ONGOING SERIES. Songs must connect to previous episodes and create anticipation for future ones. You will be shown the current Story Bible. Honor it.
 
+If the story bible has drifted into side plots that have nothing to do with jobs, AI or the bootcamp (food, pets, hobbies), do not continue them. Steer back to the job market and Joe's AI journey, and leave the drift out of your storyBibleUpdate: every running joke, storyline and next development you write there must be about jobs, AI or the bootcamp.
+
 When producing an episode, you must propose an updated Story Bible that reflects what changed in this episode (new skill Joe learned, new character introduced, new running joke, new punchline worth remembering, next development hinted at).
 
 Recurring characters (introduce gradually, give each a recognizable comic trait):
@@ -464,6 +505,11 @@ B. Three alternative first-three-second hooks optimized to stop a social scroll.
 C. Facebook ad copy: 3 primary texts, 3 headlines, 1 short description, 1 natural CTA for Jobless Joe's Bootcamp.
 D. Video production brief: visual opening, suggested Joe performance shot, on-screen captions for funniest lines, scene changes, visual punchline, final frame featuring Jobless Joe's Bootcamp, suggested aspect ratio and caption-safe composition.
 E. Next-episode teaser line + suggested next episode title.
+F. YouTube search copy (the "youtube" object), written for people searching YouTube, not for people who already know Joe:
+   - title: under 70 characters. Lead with the searchable topic of THIS song (what Joe used AI for, or the job-hunt pain it mocks), then the hook. End with "| Jobless Joe" only if it still fits. No clickbait Joe can't deliver, no ALL CAPS, at most one emoji.
+   - description: 2 to 4 short lines. The first two lines are what search results show, so they must say plainly what the video is (a funny crooner song about …) and name the topic in words people type. Do not include lyrics, links or hashtags here; those are added separately.
+   - hashtags: exactly 3, each starting with #, no spaces. The first is #JoblessJoe; the other two are about this song's topic.
+   - tags: 8 to 12 short search phrases (2 to 4 words each) someone would type to find this video, e.g. the skill Joe used, the job-hunt situation, "funny ai song". Lowercase, no #.
 
 Production brief must be practical for AI-generated video workflows (9:16 vertical for Reels/Shorts, 1:1 for feed, caption-safe areas).
 
@@ -498,6 +544,12 @@ Respond with a single valid JSON object and NOTHING ELSE. No prose, no markdown 
   },
   "nextEpisodeTeaser": string,
   "nextEpisodeTitle": string,
+  "youtube": {
+    "title": string,
+    "description": string,
+    "hashtags": [string, string, string],
+    "tags": [string]
+  },
   "storyBibleUpdate": {
     "currentSituation": string,
     "learnedSkills": [string],
@@ -515,6 +567,8 @@ QUALITY CONTROL (apply before responding)
 =========================
 
 Before you write the JSON, silently check:
+- Can the whole song be retold in one plain sentence, and does every line serve that sentence?
+- Is it about the job market, Joe adopting AI, or his bootcamp?
 - Does the first line grab attention?
 - Is Joe's crooner personality unmistakable?
 - Is there at least one genuinely funny surprise?
@@ -619,6 +673,8 @@ export interface GenerateRequest {
   language?: string;
   action: ActionKey;
   storyBible: StoryBible;
+  /** The active story arc (Season 1 unless one was written with Ralph). */
+  arc?: StoryArc;
   previousEpisode?: {
     title: string;
     lyrics: string;
@@ -630,10 +686,25 @@ export interface GenerateRequest {
 }
 
 export function buildUserPrompt(req: GenerateRequest): string {
-  const episode = EPISODES.find((e) => e.key === req.episodeKey);
+  const arc = req.arc ?? DEFAULT_ARC;
+  const seasonEpisode = seasonEpisodeFor(
+    req.episodeKey,
+    req.action,
+    req.storyBible.episodeCount,
+    arc
+  );
+  // Past the season finale, "continue" has no preset episode: the season
+  // brief tells the model to improvise the next bootcamp story.
+  const pastFinale =
+    req.action === "continue" && req.episodeKey !== "custom" && !seasonEpisode;
+  const episode = pastFinale
+    ? { label: "Life at the Bootcamp", arc: "Season 2: Joe runs his AI bootcamp. A new student brings in a new job-market absurdity." }
+    : seasonEpisode ??
+      EPISODES.find((e) => e.key === req.episodeKey) ??
+      RETIRED_EPISODES.find((e) => e.key === req.episodeKey);
   const episodeArc =
     req.episodeKey === "custom" && req.customTopic
-      ? `Custom topic: ${req.customTopic}`
+      ? `Custom topic: ${req.customTopic}. Treat it as an angle on Joe's job hunt, his AI journey or his bootcamp, never as a new subject (see STAY ON MESSAGE).`
       : episode?.arc ?? "Joe faces a fresh absurdity.";
 
   const action = ACTIONS.find((a) => a.key === req.action);
@@ -674,13 +745,19 @@ How to use the script:
 `.trim()
     : "";
 
+  // Series songs see the whole season and where this one sits in it.
+  const seasonBlock =
+    seasonEpisode || pastFinale
+      ? `\n${seasonBrief(seasonEpisode, arc)}\n`
+      : "";
+
   return `EPISODE REQUEST
 ================
-Selected episode theme: ${req.episodeLabel}
+Selected episode theme: ${seasonEpisode || pastFinale ? episode?.label : req.episodeLabel}
 Story arc guidance: ${episodeArc}
 Custom topic (if any): ${req.customTopic ?? "(none)"}
 Custom script: ${script ? "YES — see SCRIPT TO FOLLOW below, it outranks the arc and topic" : "(none)"}
-
+${seasonBlock}
 Song duration: ${req.duration} (${duration?.words ?? "appropriate length"})
 LYRIC BUDGET (hard): ${budgetBrief(req.duration, duration?.label)}
 END THE SONG PROPERLY: the last line sung is the punchline, sized to land inside ${req.duration}.
@@ -720,6 +797,7 @@ REMEMBER
 - No prose. No markdown fences. No commentary. Just the JSON.
 - Write the song itself in ${lang.label}. Compose it natively — do not translate.
 - Keep Joe's crooner voice unmistakable.
+- Stay on message: the job market, Joe adopting AI, or his AI bootcamp. Never a random-topic song.
 - Lead with a hook that stops a social scroll.
 - Fresh material only: nothing from the recent songs listed under FRESHNESS.
 - Stay inside the lyric budget, and end on the punchline — the last line sung.${script ? "\n- Cover every beat of the script, in its order. Joe's wording, the user's content." : ""}

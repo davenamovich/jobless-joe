@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { EMPTY_STORY_BIBLE, type StoryBible } from "@/lib/joe-prompts";
+import { resetStoryBible } from "@/lib/story-bible";
 
 export const runtime = "nodejs";
 
@@ -31,4 +32,9 @@ export async function GET() {
     episodeCount: row.episodeCount,
   };
   return NextResponse.json({ storyBible: sb });
+}
+
+/** DELETE /api/story-bible — start Joe's story over from Season 1, episode 1. */
+export async function DELETE() {
+  return NextResponse.json({ ok: true, storyBible: await resetStoryBible() });
 }
