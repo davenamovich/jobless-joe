@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   ACTIONS,
+  isEpisodeKey,
   buildSystemPrompt,
   buildTightenPrompt,
   buildUserPrompt,
   DURATIONS,
   EMPTY_STORY_BIBLE,
-  EPISODES,
   INTENSITIES,
   MAX_SCRIPT_CHARS,
   MIN_SCRIPT_CHARS,
@@ -27,6 +27,9 @@ import { CROONER_STYLES } from "@/lib/crooner-styles";
 import { DEFAULT_LANGUAGE, isLanguageKey } from "@/lib/languages";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { digestSong, freshnessBlock, pickAngle, type RecentSong } from "@/lib/freshness";
+import { cleanYouTubeSeo } from "@/lib/youtube-service";
+import { seasonEpisodeFor } from "@/lib/season";
+import { loadArc } from "@/lib/ralph";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -42,6 +45,11 @@ interface GenerateBody {
   croonerStyle?: string;
   language?: string;
   action: ActionKey;
+  /**
+   * The song a refine action (funnier, continue…) works on. Without it the
+   * newest episode in the DB is used, which may be another chat's song.
+   */
+  episodeId?: string;
 }
 
 /** Pull a fresh Story Bible out of the DB (or return the default one). */
@@ -91,16 +99,22 @@ async function saveStoryBible(sb: SongOutput["storyBibleUpdate"], episodeCount: 
   });
 }
 
-/** Find the most recent episode (any action) to use as context for refinements. */
-async function loadLastEpisode(): Promise<{
+/**
+ * The episode a refinement works on: the one asked for, else the most recent.
+ */
+async function loadLastEpisode(episodeId?: string): Promise<{
   title: string;
   lyrics: string;
   closingLine: string;
   nextEpisodeTeaser: string;
 } | null> {
-  const last = await db.episode.findFirst({
-    orderBy: { createdAt: "desc" },
-  });
+  const last =
+    (episodeId
+      ? await db.episode.findUnique({ where: { id: episodeId } })
+      : null) ??
+    (await db.episode.findFirst({
+      orderBy: { createdAt: "desc" },
+    }));
   if (!last) return null;
   try {
     const out: SongOutput = JSON.parse(last.output);
@@ -296,6 +310,7 @@ function sanitizeOutput(out: SongOutput): SongOutput {
     },
     nextEpisodeTeaser: out.nextEpisodeTeaser || "",
     nextEpisodeTitle: out.nextEpisodeTitle || "The Next Chapter",
+    youtube: cleanYouTubeSeo(out.youtube),
     storyBibleUpdate: out.storyBibleUpdate ?? {
       currentSituation: "",
       learnedSkills: [],
@@ -317,10 +332,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
+  // The arc the series follows: one written with Ralph, else Season 1.
+  const { arc } = await loadArc();
   const validEpisode =
-    body.episodeKey === "custom" || EPISODES.some((e) => e.key === body.episodeKey);
+    body.episodeKey === "custom" ||
+    isEpisodeKey(body.episodeKey) ||
+    arc.episodes.some((e) => e.key === body.episodeKey);
   if (!validEpisode) {
     return NextResponse.json({ error: "Unknown episode theme." }, { status: 400 });
+  }
+  // "Continue the story" always means the season, even when the song on
+  // screen was a one-off custom topic: it plays the next season episode.
+  if (body.action === "continue" && body.episodeKey === "custom") {
+    body = {
+      ...body,
+      episodeKey: arc.episodes[0].key,
+      episodeLabel: arc.episodes[0].label,
+      customTopic: undefined,
+      customScript: undefined,
+    };
   }
   if (!INTENSITIES.some((i) => i.key === body.intensity)) {
     return NextResponse.json({ error: "Unknown intensity." }, { status: 400 });
@@ -354,7 +384,7 @@ export async function POST(req: NextRequest) {
 
   const storyBible = await loadStoryBible();
   const previousEpisode =
-    body.action === "generate" ? null : await loadLastEpisode();
+    body.action === "generate" ? null : await loadLastEpisode(body.episodeId);
 
   // Brand-new songs (generate / continue) get a comic angle; remixes rewrite
   // the latest song, so that one is left off the do-not-reuse list.
@@ -378,6 +408,7 @@ export async function POST(req: NextRequest) {
     language,
     action: body.action,
     storyBible,
+    arc,
     previousEpisode,
     freshness,
   });
@@ -502,10 +533,14 @@ export async function POST(req: NextRequest) {
       ? storyBible.episodeCount + 1
       : storyBible.episodeCount;
 
+  // "Continue" plays the next season episode; file the song under that one so
+  // remixes and the next "continue" know where the story is.
+  const played = seasonEpisodeFor(body.episodeKey, body.action, storyBible.episodeCount, arc);
+
   const createdEpisode = await db.episode.create({
     data: {
-      episodeTheme: body.episodeKey,
-      episodeLabel: body.episodeLabel,
+      episodeTheme: played?.key ?? body.episodeKey,
+      episodeLabel: played?.label ?? body.episodeLabel,
       customTopic: body.customTopic ?? null,
       customScript: script ?? null,
       duration: body.duration,
@@ -523,7 +558,13 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  await saveStoryBible(cleaned.storyBibleUpdate, newEpisodeCount);
+  // Only the series moves the story on. A one-off custom topic or pasted
+  // script (anything a Telegram user types) would otherwise rewrite the shared
+  // Story Bible, and every later song would carry its side plot forward.
+  const updatesSeries = body.episodeKey !== "custom";
+  if (updatesSeries) {
+    await saveStoryBible(cleaned.storyBibleUpdate, newEpisodeCount);
+  }
 
   // === Fire TTS audio generation in the background. ===
   // We don't await this — generation can take 5-30s for a long song, and the
@@ -539,10 +580,9 @@ export async function POST(req: NextRequest) {
     output: cleaned,
     episodeId: createdEpisode.id,
     lyricFit: { ...lyricFit, tightened },
-    storyBible: {
-      ...cleaned.storyBibleUpdate,
-      episodeCount: newEpisodeCount,
-    },
+    storyBible: updatesSeries
+      ? { ...cleaned.storyBibleUpdate, episodeCount: newEpisodeCount }
+      : storyBible,
     backend: usedBackend,
     model: usedModel,
     croonerStyle: croonerStyleKey,

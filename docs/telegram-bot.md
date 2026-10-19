@@ -1,10 +1,16 @@
 # Telegram bot
 
-Send the bot a topic and it writes, records and publishes a Jobless Joe song,
-then replies with the here.now song page link (player, MP3 download, lyrics).
+Talk to Joe about the job hunt and he chats back in character (a Ralph-style
+chat from meme-loop-engine: last 12 messages plus a few remembered facts about
+you, `src/lib/joe-chat.ts`). Every reply has a 🎙️ **Make it a song** button;
+tap it and the bot writes, records and publishes a song about what you told
+him, then replies with the here.now song page link (player, MP3 download, lyrics).
 
 ```
-you:  Joe gets replaced by a self-checkout machine
+you:  got replaced by a self-checkout machine
+joe:  Kid, that's not a layoff, that's a B-side... "Unexpected Item in the Bagging Area"
+      [🎙️ Make it a song]
+you:  (taps the button)
 bot:  ✍️ Joe is writing a 60s song about…        (edited in place as it goes)
       🎙️ Lyrics done. Joe is in the booth…
       🎶 The Unexpected Item in the Bagging Area
@@ -18,11 +24,12 @@ bot:  ✍️ Joe is writing a 60s song about…        (edited in place as it go
 
 | Command | What it does |
 | --- | --- |
-| *any text* | Song about that topic or context |
+| *any text* | Chat with Joe; tap 🎙️ Make it a song under his reply |
 | *pasted lyrics (4+ lines)* | Joe sings your lyrics (sent as the song's script) |
-| `/song <topic>` | Same as sending the topic |
+| `/song <topic>` | Song about that topic right away, no chat |
+| `/newchat` | Joe forgets the chat and what he learned about you |
 | `/lyrics <lyrics>` | Same as pasting lyrics, for shorter ones |
-| `/episode [n]` | List the 16 story episodes, or sing number *n* |
+| `/episode [n]` | List the season's episodes, or sing number *n* |
 | `/next` | Continue the story from the last song |
 | `/funnier` `/sharper` `/attitude` `/ending` | Remix the last song |
 | `/ad` | Turn the last song into a 30-second ad |
@@ -93,6 +100,7 @@ app can't reach itself there. One song at a time per chat.
    TELEGRAM_WEBHOOK_URL=https://<public-host>/api/telegram/webhook
    TELEGRAM_WEBHOOK_SECRET=<openssl rand -hex 24>
    TELEGRAM_ALLOWED_CHAT_IDS=        # optional, comma-separated; empty = public
+   TELEGRAM_ADMIN_CHAT_IDS=          # chats allowed to /resetstory, /arc new and /arc season1
    HERENOW_API_KEY=                  # optional; without it pages expire after 24h
    ```
 

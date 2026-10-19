@@ -10,6 +10,8 @@ import { tg, safeReply } from "../bot";
 import type { TelegramMessage } from "../types";
 import { updateSession } from "../sessions";
 import { db } from "@/lib/db";
+import { resetStoryBible } from "@/lib/story-bible";
+import { isAdminChat } from "./ralph";
 import { CUSTOM_LABEL, requestLyricSong, requestTopicSong } from "../handlers/message";
 import { chatPrefs, escapeHtml, startSong } from "../song-flow";
 import { ACTIONS, DURATIONS, EPISODES, INTENSITIES, type ActionKey } from "@/lib/joe-prompts";
@@ -63,6 +65,24 @@ export async function handleEpisode(args: string[], msg: TelegramMessage) {
   });
 }
 
+/**
+ * /resetstory — start Joe's shared story over from Season 1, episode 1.
+ * The story is shared by every chat, so only chats listed in
+ * TELEGRAM_ADMIN_CHAT_IDS (comma-separated) may reset it.
+ */
+export async function handleResetStory(_args: string[], msg: TelegramMessage) {
+  if (!isAdminChat(msg.chat.id)) {
+    await say(msg.chat.id, `Only the show's producer can restart Joe's story.`, "send reset refused");
+    return;
+  }
+  await resetStoryBible();
+  await say(
+    msg.chat.id,
+    `🎬 Story reset. /next plays episode 1 of the arc (see /arc).`,
+    "send reset done",
+  );
+}
+
 /** /next — the next chapter of the running story. */
 export async function handleNext(_args: string[], msg: TelegramMessage) {
   await runAction(msg, "continue");
@@ -85,7 +105,12 @@ export const handleAd = remix("thirty-ad");
  */
 async function runAction(msg: TelegramMessage, action: ActionKey) {
   const def = ACTIONS.find((a) => a.key === action);
-  const last = await db.episode.findFirst({ orderBy: { createdAt: "desc" } });
+  // This chat's own last song. Chats from before lastEpisodeId was tracked
+  // fall back to the newest song overall, as before.
+  const own = chatPrefs(msg).lastEpisodeId;
+  const last =
+    (own ? await db.episode.findUnique({ where: { id: own } }) : null) ??
+    (await db.episode.findFirst({ orderBy: { createdAt: "desc" } }));
   if (!last) {
     await say(msg.chat.id, `No song yet — make one first with /song or /episode.`, "send no last song");
     return;
@@ -98,6 +123,7 @@ async function runAction(msg: TelegramMessage, action: ActionKey) {
     topic: last.customTopic ?? undefined,
     script: last.customScript ?? undefined,
     action,
+    episodeId: last.id,
     intro: `${def?.emoji ?? "🎙️"} ${escapeHtml(def?.label ?? action)} — working on <b>${escapeHtml(last.title)}</b>…`,
   });
 }

@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Jobless Joe · A Stick Figure Crooner</title>
+<meta name="description" content="Songs for the recently unemployed. Spend 10 minutes with Jobless Joe, then learn to put AI to work for you in his free 7-day boot camp.">
+<link rel="canonical" href="https://www.plunderandriffle.com/joblessjoe">
+<meta property="og:title" content="Jobless Joe · A Stick Figure Crooner">
+<meta property="og:description" content="Songs for the recently unemployed. Free 7-day AI side-hustle boot camp.">
+<meta property="og:image" content="https://www.plunderandriffle.com/og/joblessjoe.jpg">
+<meta name="theme-color" content="#15111F">
+<link rel="icon" href="avatar.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Libre+Franklin:wght@400;500;600;700&family=DM+Mono:wght@500&display=swap">
+<style>
+/* Layout: the page is a night at Joe's lounge. Hero is the stage, every section is a part of the show (act, set list, residency, request line, bar talk, curtain call). Deliberately single dark theme: it is always showtime. */
+:root {
+  --stage: #15111F;
+  --stage-2: #201A2E;
+  --stage-3: #2B2340;
+  --curtain: #7E1222;
+  --curtain-hi: #B21E33;
+  --gold: #E3B04B;
+  --gold-hi: #F7D774;
+  --gold-deep: #A87418;
+  --cream: #F3ECDD;
+  --muted: #B6ACC6;
+  --tie: #D7263D;
+  --mic: #A9AEBA;
+  --line: #121016;
+  --head: #FFFFFF;
+  --paper: #EFE6D2;
+  --paper-ink: #2A2018;
+  --floor: #2B1F15;
+  --display: "DM Serif Display", Georgia, "Times New Roman", serif;
+  --body: "Libre Franklin", "Helvetica Neue", Arial, sans-serif;
+  --mono: "DM Mono", ui-monospace, Menlo, monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html { padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); background: #15111F; }
+body { margin: 0; }
+img { max-width: 100%; }
+[hidden] { display: none !important; }
+body { background: var(--stage); color: var(--cream); font-family: var(--body); font-size: 16px; line-height: 1.55; }
+a { color: var(--gold-hi); }
+:focus-visible { outline: 3px solid var(--gold-hi); outline-offset: 3px; border-radius: 4px; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+h1, h2, h3 { font-family: var(--display); font-weight: 400; text-wrap: balance; margin: 0; line-height: 1.05; }
+h2 { font-size: clamp(2rem, 4.5vw, 3.1rem); }
+h3 { font-size: 1.45rem; }
+p { margin: 0; }
+.eyebrow { font-family: var(--display); font-style: italic; color: var(--gold); letter-spacing: .28em; text-transform: uppercase; font-size: .85rem; }
+.gold { background: linear-gradient(180deg, var(--gold-hi) 0%, var(--gold) 55%, var(--gold-deep) 100%); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 3px 0 rgba(0,0,0,.55)); }
+.lede { color: var(--muted); max-width: 60ch; }
+section { padding-block: clamp(56px, 9vw, 104px); }
+.sec-head { display: grid; gap: 12px; margin-bottom: 36px; max-width: 720px; }
+
+
+/* nav */
+nav.top { background: var(--curtain); border-bottom: 2px solid var(--gold); }
+nav.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-block: 10px; flex-wrap: wrap; }
+.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; color: var(--cream); }
+.brand svg { width: 40px; height: 40px; }
+.brand b { font-family: var(--display); font-weight: 400; font-size: 1.35rem; }
+.brand small { display: block; font-size: .7rem; color: #F1C9CF; letter-spacing: .04em; }
+nav.top ul { display: flex; gap: 18px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; font-size: .9rem; }
+nav.top ul a { color: var(--cream); text-decoration: none; }
+nav.top ul a:hover { color: var(--gold-hi); }
+.navcta { display: flex; gap: 10px; align-items: center; }
+
+/* buttons */
+.btn { display: inline-flex; align-items: center; gap: 10px; font-weight: 700; text-decoration: none; padding: 13px 22px; border-radius: 999px; font-size: .98rem; transition: transform .15s ease, box-shadow .15s ease; }
+.btn:hover { transform: translateY(-2px); }
+.btn.ticket { background: linear-gradient(180deg, var(--gold-hi), var(--gold)); color: var(--stage); box-shadow: 0 4px 0 var(--gold-deep); border-radius: 8px; position: relative; }
+.btn.ticket::before, .btn.ticket::after { content: ""; position: absolute; top: 50%; width: 12px; height: 12px; border-radius: 50%; background: var(--stage); transform: translateY(-50%); }
+.btn.ticket::before { left: -6px; } .btn.ticket::after { right: -6px; }
+nav .btn.ticket::before, nav .btn.ticket::after { background: var(--curtain); }
+.btn.ghost { border: 1.5px solid var(--gold); color: var(--gold-hi); }
+.btn.small { padding: 8px 16px; font-size: .85rem; }
+
+/* hero stage */
+.stage { position: relative; background: radial-gradient(ellipse at 70% 40%, var(--stage-3) 0%, var(--stage) 65%); overflow: hidden; }
+.stage::before, .stage::after { content: ""; position: absolute; top: 0; bottom: 0; width: clamp(18px, 6vw, 84px); z-index: 2;
+  background: repeating-linear-gradient(90deg, var(--curtain) 0 10px, var(--curtain-hi) 10px 18px, var(--curtain) 18px 26px); box-shadow: 0 0 40px rgba(0,0,0,.6); }
+.stage::before { left: 0; border-bottom-right-radius: 60% 18%; }
+.stage::after { right: 0; border-bottom-left-radius: 60% 18%; }
+.valance { position: relative; z-index: 3; height: 34px; background: var(--curtain);
+  -webkit-mask: radial-gradient(28px 14px at 50% 100%, transparent 98%, #000 100%) 0 0/70px 34px repeat-x; mask: radial-gradient(28px 14px at 50% 100%, transparent 98%, #000 100%) 0 0/70px 34px repeat-x; }
+.stage .wrap { position: relative; z-index: 1; display: grid; grid-template-columns: 1.15fr .85fr; align-items: end; gap: 24px; padding-left: max(16px, calc(env(safe-area-inset-left, 0px) + clamp(28px, 7vw, 96px))); padding-right: max(16px, calc(env(safe-area-inset-right, 0px) + clamp(28px, 7vw, 96px))); padding-block: 36px 0; }
+.hero-copy { display: grid; gap: 18px; padding-bottom: 56px; min-width: 0; }
+.hero-copy h1 { font-size: clamp(3.4rem, 9vw, 6.6rem); }
+.hero-copy .sub { font-family: var(--display); font-style: italic; font-size: clamp(1.4rem, 2.6vw, 2rem); }
+.hero-copy .tag { letter-spacing: .3em; text-transform: uppercase; color: var(--muted); font-size: .8rem; }
+.rule { height: 1px; background: var(--gold); width: min(420px, 100%); opacity: .8; }
+.pitch { font-size: 1.12rem; max-width: 46ch; }
+.pitch strong { color: var(--gold-hi); font-weight: 600; }
+.actions { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.hero-art { min-width: 0; }
+.hero-art svg { width: 100%; max-width: 380px; display: block; margin-left: auto; overflow: visible; }
+.floor { height: 26px; background: linear-gradient(180deg, #4A3522, var(--floor)); border-top: 2px solid var(--gold-deep); position: relative; z-index: 3; }
+
+/* ticker */
+.ticker { background: var(--stage-2); border-bottom: 1px solid var(--stage-3); overflow: hidden; position: relative; }
+.ticker::before, .ticker::after { content: ""; position: absolute; left: 0; right: 0; height: 8px; background: radial-gradient(circle, var(--gold-hi) 2.5px, transparent 3.5px) 0 50%/20px 8px repeat-x; opacity: .9; }
+.ticker::before { top: 4px; } .ticker::after { bottom: 4px; }
+.ticker-track { display: flex; gap: 48px; width: max-content; padding-block: 22px; animation: roll 38s linear infinite; font-family: var(--display); font-size: 1.15rem; }
+.ticker-track span::before { content: "♪"; color: var(--gold); margin-right: 14px; }
+@keyframes roll { to { transform: translateX(-50%); } }
+
+/* acts */
+.acts { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+.act { background: var(--stage-2); border: 1px solid var(--stage-3); border-radius: 10px; overflow: hidden; display: grid; grid-template-rows: auto 1fr; }
+.act .frame { background: radial-gradient(ellipse at 50% 30%, var(--stage-3), var(--stage)); border-bottom: 3px solid var(--curtain); }
+.act svg { display: block; width: 100%; height: auto; }
+.act .cap { padding: 16px 18px 20px; display: grid; gap: 6px; align-content: start; }
+.act .num { font-family: var(--display); font-style: italic; color: var(--gold); }
+.act p { color: var(--muted); font-size: .95rem; }
+
+/* now playing + setlist */
+.np { display: grid; grid-template-columns: 1.2fr 1fr; gap: 28px; align-items: start; }
+.screen { position: relative; background: var(--stage-2); border: 2px solid var(--gold-deep); border-radius: 12px; overflow: hidden; }
+.screen svg { display: block; width: 100%; height: auto; }
+.play { position: absolute; inset: 0; display: grid; place-items: center; text-decoration: none; }
+.play span { width: 74px; height: 74px; border-radius: 50%; background: var(--tie); display: grid; place-items: center; box-shadow: 0 6px 24px rgba(0,0,0,.5); transition: transform .15s; }
+.play:hover span { transform: scale(1.08); }
+.play span::after { content: ""; border-left: 22px solid var(--cream); border-top: 14px solid transparent; border-bottom: 14px solid transparent; margin-left: 6px; }
+.screen figcaption { padding: 14px 18px; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: .92rem; color: var(--muted); }
+.screen figcaption b { color: var(--cream); font-weight: 600; }
+figure { margin: 0; }
+.setlist { background: var(--paper); color: var(--paper-ink); padding: 26px 26px 22px; border-radius: 3px; transform: rotate(1.2deg); box-shadow: 0 14px 30px rgba(0,0,0,.45); position: relative; min-width: 0; }
+.setlist::before { content: ""; position: absolute; top: -12px; left: 50%; width: 110px; height: 26px; transform: translateX(-50%) rotate(-3deg); background: rgba(243,236,221,.55); }
+.setlist h3 { font-size: 1.7rem; border-bottom: 2px solid var(--paper-ink); padding-bottom: 8px; margin-bottom: 8px; }
+.setlist ol { list-style: none; margin: 0; padding: 0; counter-reset: s; }
+.setlist li { counter-increment: s; display: grid; grid-template-columns: 2ch 1fr auto; gap: 12px; padding-block: 9px; border-bottom: 1px dashed rgba(42,32,24,.3); align-items: baseline; }
+.setlist li::before { content: counter(s); font-family: var(--mono); color: var(--curtain); }
+.setlist li a { color: var(--paper-ink); text-decoration: none; font-weight: 600; }
+.setlist li a:hover { text-decoration: underline; }
+.setlist time { font-family: var(--mono); font-size: .85rem; font-variant-numeric: tabular-nums; color: #6B5B4A; }
+.setlist .note { margin-top: 12px; font-size: .78rem; color: #6B5B4A; font-style: italic; }
+
+/* residency */
+.residency { background: linear-gradient(180deg, var(--stage) 0%, var(--stage-2) 100%); }
+.poster { border: 2px solid var(--gold); border-radius: 14px; padding: clamp(20px, 4vw, 40px); position: relative; }
+.poster::before { content: ""; position: absolute; inset: 8px; border: 1px solid rgba(227,176,75,.4); border-radius: 9px; pointer-events: none; }
+.nights { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 12px; margin-top: 28px; }
+.night { background: var(--stage); border: 1px solid var(--stage-3); border-radius: 8px; padding: 12px 12px 16px; display: grid; gap: 6px; align-content: start; text-align: center; }
+.night svg { width: 64px; height: 96px; margin: 0 auto; overflow: visible; }
+.night .n { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; color: var(--gold); }
+.night b { font-family: var(--display); font-weight: 400; font-size: 1.1rem; line-height: 1.15; }
+.night p { font-size: .82rem; color: var(--muted); }
+.night.finale { border-color: var(--gold); background: radial-gradient(ellipse at 50% 0%, rgba(227,176,75,.18), var(--stage) 70%); }
+.poster .fine { margin-top: 22px; font-size: .8rem; color: var(--muted); max-width: 80ch; }
+.poster .actions { margin-top: 22px; }
+
+/* ten-minute set */
+.set10 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border-top: 2px solid var(--gold); }
+.set10 div { padding: 18px 18px 0 0; display: grid; gap: 6px; align-content: start; position: relative; }
+.set10 div::before { content: ""; position: absolute; top: -8px; left: 0; width: 14px; height: 14px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 12px var(--gold); }
+.set10 time { font-family: var(--mono); color: var(--gold-hi); font-size: .9rem; font-variant-numeric: tabular-nums; }
+.set10 b { font-family: var(--display); font-weight: 400; font-size: 1.4rem; }
+.set10 p { color: var(--muted); font-size: .93rem; max-width: 30ch; }
+
+/* request line */
+.requests { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+.req { background: var(--stage-2); border-radius: 10px; padding: 22px 20px; display: grid; gap: 12px; align-content: start; border-top: 4px solid var(--tie); }
+.req .lbl { font-family: var(--mono); font-size: .72rem; letter-spacing: .14em; color: var(--muted); text-transform: uppercase; }
+.req h3 { font-size: 1.35rem; }
+.req q { font-family: var(--display); font-style: italic; font-size: 1.15rem; color: var(--gold-hi); quotes: "“" "”"; }
+
+/* straight talk */
+.talk { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+.bill { display: grid; gap: 22px; }
+.bill h3 { font-size: 1.1rem; font-family: var(--body); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; }
+.bill ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.bill li { display: flex; justify-content: space-between; gap: 12px; padding-bottom: 10px; border-bottom: 1px solid var(--stage-3); }
+.pill { font-family: var(--mono); font-size: .7rem; padding: 3px 9px; border-radius: 999px; letter-spacing: .1em; white-space: nowrap; align-self: center; }
+.pill.live { background: var(--tie); color: var(--cream); }
+.pill.soon { border: 1px solid var(--muted); color: var(--muted); }
+
+/* faq */
+.faq { display: grid; gap: 0; max-width: 820px; }
+.faq details { border-bottom: 1px solid var(--stage-3); padding-block: 18px; }
+.faq summary { cursor: pointer; font-family: var(--display); font-size: 1.35rem; list-style: none; display: flex; justify-content: space-between; gap: 16px; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; color: var(--gold); font-family: var(--mono); }
+.faq details[open] summary::after { content: "–"; }
+.faq details p { margin-top: 10px; color: var(--muted); max-width: 64ch; }
+
+/* curtain call */
+.call { background: radial-gradient(ellipse at 50% 100%, var(--stage-3), var(--stage) 70%); text-align: center; border-top: 2px solid var(--gold-deep); }
+.call .wrap { display: grid; justify-items: center; gap: 18px; }
+.call svg { width: 160px; height: auto; overflow: visible; }
+.call .actions { justify-content: center; }
+
+footer { background: #0D0A13; padding-block: 36px; font-size: .85rem; color: var(--muted); }
+footer .wrap { display: grid; gap: 14px; }
+footer ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px 20px; }
+footer a { color: var(--cream); text-decoration: none; }
+
+/* svg figure styles */
+.limbs { fill: none; stroke: var(--cream); stroke-width: 5; stroke-linecap: round; stroke-linejoin: round; }
+.bot .limbs { stroke: var(--mic); }
+.head { fill: var(--head); stroke: var(--line); stroke-width: 3.5; }
+.face { fill: none; stroke: var(--line); stroke-width: 2.6; stroke-linecap: round; }
+.dot { fill: var(--line); }
+.tie { fill: var(--tie); stroke: var(--line); stroke-width: 1.5; stroke-linejoin: round; }
+.rhead { fill: #C9CDD6; stroke: var(--line); stroke-width: 3; }
+.rline { stroke: var(--mic); stroke-width: 3; }
+.stand { stroke: var(--mic); stroke-width: 3; stroke-linecap: round; fill: none; }
+.miccap { fill: var(--mic); stroke: var(--line); stroke-width: 2; }
+.notes path, .notes ellipse { fill: var(--gold); stroke: var(--gold); stroke-width: 2.5; stroke-linecap: round; }
+.notes path { fill: none; }
+.svgtxt { font-family: var(--body); font-weight: 600; fill: var(--paper-ink); }
+.svgdisp { font-family: var(--display); fill: var(--cream); }
+.bubble { fill: var(--cream); stroke: var(--line); stroke-width: 1.5; }
+.box { fill: #B98A52; stroke: var(--line); stroke-width: 2; }
+.board { fill: #1E3A2F; stroke: #8B6A3E; stroke-width: 4; }
+.chalk { font-family: var(--display); fill: var(--cream); }
+.stamp { font-family: var(--body); font-weight: 800; fill: none; stroke: var(--tie); stroke-width: 1.4; letter-spacing: 2px; }
+.stampbox { fill: none; stroke: var(--tie); stroke-width: 2.5; }
+.plane { fill: var(--cream); stroke: var(--line); stroke-width: 1; }
+.groundline { stroke: var(--gold-deep); stroke-width: 2; }
+.laptop { fill: var(--stage-3); stroke: var(--mic); stroke-width: 2.5; stroke-linejoin: round; }
+.glow { fill: var(--gold-hi); opacity: .5; }
+
+.sway { transform-box: fill-box; transform-origin: 50% 100%; animation: sway 3.2s ease-in-out infinite; }
+@keyframes sway { 0%,100% { transform: rotate(-1.6deg); } 50% { transform: rotate(1.6deg); } }
+.notes g { animation: float 4s ease-in-out infinite; transform-box: fill-box; }
+.notes g:nth-child(2) { animation-delay: -1.3s; } .notes g:nth-child(3) { animation-delay: -2.6s; }
+@keyframes float { 0%,100% { transform: translateY(0); opacity: 1; } 50% { transform: translateY(-10px); opacity: .7; } }
+.fly { animation: fly 5s linear infinite; }
+@keyframes fly { from { transform: translate(0,0); } to { transform: translate(-30px, 12px); } }
+
+@media (prefers-reduced-motion: reduce) {
+  .sway, .notes g, .ticker-track, .fly { animation: none; }
+  .btn, .play span { transition: none; }
+}
+
+@media (max-width: 960px) {
+  .acts, .requests { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nights { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .np, .talk { grid-template-columns: 1fr; }
+  .set10 { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 26px; border-top: none; }
+  .set10 div { border-top: 2px solid var(--gold); }
+  nav.top ul { display: none; }
+}
+@media (max-width: 680px) {
+  .stage .wrap { grid-template-columns: 1fr; }
+  .hero-copy { padding-bottom: 8px; }
+  .hero-art svg { margin: 0 auto; max-width: 280px; }
+  .nights { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .night.finale { grid-column: span 2; }
+}
+@media (max-width: 520px) {
+  .acts, .requests, .set10 { grid-template-columns: 1fr; }
+  .brand small { display: none; }
+}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <filter id="boil" x="-20%" y="-20%" width="140%" height="140%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.04" numOctaves="2" seed="1">
+        <animate attributeName="seed" values="1;4;7" dur="0.5s" calcMode="discrete" repeatCount="indefinite"></animate>
+      </feTurbulence>
+      <feDisplacementMap in="SourceGraphic" scale="2.2"></feDisplacementMap>
+    </filter>
+    <linearGradient id="spot" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF6DD" stop-opacity=".55"></stop>
+      <stop offset="1" stop-color="#FFF6DD" stop-opacity=".08"></stop>
+    </linearGradient>
+    <radialGradient id="pool" cx=".5" cy=".5" r=".5">
+      <stop offset="0" stop-color="#FFF1C8" stop-opacity=".55"></stop>
+      <stop offset="1" stop-color="#FFF1C8" stop-opacity="0"></stop>
+    </radialGradient>
+  </defs>
+</svg>
+
+
+<nav class="top" aria-label="Main">
+  <div class="wrap">
+    <a class="brand" href="#top"><svg id="avatar" viewBox="0 0 100 100"></svg><span><b>Jobless Joe</b><small>Powered by Plunder &amp; Riffle</small></span></a>
+    <ul>
+      <li><a href="#show">The show</a></li>
+      <li><a href="#setlist">Set list</a></li>
+      <li><a href="#residency">Boot camp</a></li>
+      <li><a href="#requests">Requests</a></li>
+      <li><a href="#bar">FAQ</a></li>
+      <li><a href="#bar">$JOE</a></li>
+    </ul>
+    <div class="navcta"><a class="btn ghost small" href="#">Log in</a><a class="btn ticket small" href="#residency">Free boot camp</a></div>
+  </div>
+</nav>
+
+<header class="stage" id="top">
+  <div class="valance" aria-hidden="true"></div>
+  <div class="wrap">
+    <div class="hero-copy">
+      <p class="eyebrow">— Live nightly · No cover —</p>
+      <h1 class="gold">Jobless Joe</h1>
+      <div class="rule" aria-hidden="true"></div>
+      <p class="sub">A Stick Figure Crooner</p>
+      <p class="tag">Songs for the recently unemployed</p>
+      <p class="pitch">The job market ghosted Joe, so he hired the AI that replaced him as his backup band. <strong>Spend 10 minutes with us and forget you were job hunting.</strong> Then learn to put AI to work for you in his free 7-night boot camp.</p>
+      <div class="actions">
+        <a class="btn ticket" href="#residency">Get a free seat: 7-day boot camp</a>
+        <a class="btn ghost" href="#setlist">▶ Watch tonight's song</a>
+      </div>
+    </div>
+    <div class="hero-art"><svg id="hero" viewBox="0 0 300 340" role="img" aria-label="Joe, a winking stick figure in a red tie, sings into a microphone under a spotlight"></svg></div>
+  </div>
+  <div class="floor" aria-hidden="true"></div>
+</header>
+
+<div class="ticker" aria-label="Lines from the show">
+  <div class="ticker-track">
+    <span>Rejected in 0.4 seconds</span><span>Ghosted by a chatbot</span><span>“We'll keep your résumé on file” (they won't)</span><span>Trained the AI that replaced me</span><span>Now it sings backup</span><span>Boot camp now open, in my garage</span>
+    <span aria-hidden="true">Rejected in 0.4 seconds</span><span aria-hidden="true">Ghosted by a chatbot</span><span aria-hidden="true">“We'll keep your résumé on file” (they won't)</span><span aria-hidden="true">Trained the AI that replaced me</span><span aria-hidden="true">Now it sings backup</span><span aria-hidden="true">Boot camp now open, in my garage</span>
+  </div>
+</div>
+
+<section id="show">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">The show so far</p>
+      <h2>One stick figure. Four acts. Zero job offers.</h2>
+      <p class="lede">Every episode picks up Joe's story somewhere along this arc, so new visitors get the joke in five seconds.</p>
+    </div>
+    <div class="acts">
+      <article class="act"><div class="frame"><svg id="act1" viewBox="0 0 240 170"></svg></div><div class="cap"><span class="num">Act I</span><h3>The layoff</h3><p>Nine years of loyal service, one cardboard box, and a cake that said "Good luck!"</p></div></article>
+      <article class="act"><div class="frame"><svg id="act2" viewBox="0 0 240 170"></svg></div><div class="cap"><span class="num">Act II</span><h3>The applications</h3><p>Application #312. Rejected in 0.4 seconds by a screening bot.</p></div></article>
+      <article class="act"><div class="frame"><svg id="act3" viewBox="0 0 240 170"></svg></div><div class="cap"><span class="num">Act III</span><h3>The duet</h3><p>If you can't beat the AI, put it in the band. Joe learns to make it work for him.</p></div></article>
+      <article class="act"><div class="frame"><svg id="act4" viewBox="0 0 240 170"></svg></div><div class="cap"><span class="num">Act IV</span><h3>The boot camp</h3><p>Now Joe teaches it to everyone else. Free. In his garage. Parking is the driveway.</p></div></article>
+    </div>
+  </div>
+</section>
+
+<section id="setlist" style="background: var(--stage-2);">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Now playing</p>
+      <h2>Tonight's set list</h2>
+      <p class="lede">The newest YouTube episode headlines the page. Older songs stack up on a taped-down set list, so the page stays fresh every time Joe uploads.</p>
+    </div>
+    <div class="np">
+      <figure class="screen">
+        <svg id="nowplaying" viewBox="0 0 320 180"></svg>
+        <a class="play" href="#" aria-label="Play “Ghosted by a Chatbot” on YouTube"><span></span></a>
+        <figcaption><span><b>Ghosted by a Chatbot</b> · Episode 14</span><span>Watch on YouTube ↗</span></figcaption>
+      </figure>
+      <div class="setlist">
+        <h3>Set list</h3>
+        <ol>
+          <li><a href="#">Ghosted by a Chatbot</a><time>1:02</time></li>
+          <li><a href="#">My Interviewer Was an LLM</a><time>0:58</time></li>
+          <li><a href="#">Rejected in 0.4 Seconds</a><time>1:00</time></li>
+          <li><a href="#">I Trained My Replacement</a><time>1:04</time></li>
+          <li><a href="#">Prompt Engineer (Unpaid)</a><time>0:57</time></li>
+          <li><a href="#">Boot Camp Grand Opening</a><time>1:01</time></li>
+        </ol>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="residency" class="residency">
+  <div class="wrap">
+    <div class="poster">
+      <div class="sec-head" style="margin-bottom:0">
+        <p class="eyebrow">A 7-night residency · free admission</p>
+        <h2 class="gold">Jobless Joe's AI Side-Hustle Boot Camp</h2>
+        <p class="lede">One short lesson a night, hands on, starting from zero. Sign in only if you want Joe to save your progress.</p>
+      </div>
+      <div class="nights" id="nights"></div>
+      <div class="actions"><a class="btn ticket" href="#">Take your seat for Night 1</a><a class="btn ghost small" href="#">Already graduated? Run your own Joe on Bankr</a></div>
+      <p class="fine">The boot camp teaches tools and habits. It does not promise income, followers or a job, and results vary.</p>
+    </div>
+  </div>
+</section>
+
+<section id="plan">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">The 10-minute set</p>
+      <h2>Your whole routine fits between two rejection emails.</h2>
+    </div>
+    <div class="set10">
+      <div><time>0:00 – 1:00</time><b>Pick your pain</b><p>Layoff, ghosting, the 40-box application form. Choose tonight's theme.</p></div>
+      <div><time>1:00 – 2:00</time><b>Vent, briefly</b><p>Tell Joe what happened in a sentence or two. He has heard worse.</p></div>
+      <div><time>2:00 – 3:00</time><b>Get the meme</b><p>Joe turns it into a meme or a song clip, with your referral link built in.</p></div>
+      <div><time>3:00 – 10:00</time><b>Post. Laugh. Repeat.</b><p>Share it, read the replies, and take a bow.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="requests" style="background: var(--stage-2);">
+  <div class="wrap">
+    <div class="sec-head">
+      <p class="eyebrow">Request line</p>
+      <h2>Four flavors of jobless. Pick a song.</h2>
+    </div>
+    <div class="requests">
+      <article class="req"><span class="lbl">Request 01</span><h3>AI took my job</h3><q>It learned my job in a weekend. Took me eleven years.</q></article>
+      <article class="req"><span class="lbl">Request 02</span><h3>Job applications</h3><q>Please re-enter your résumé into these forty boxes.</q></article>
+      <article class="req"><span class="lbl">Request 03</span><h3>Side hustles</h3><q>I'm the CEO, the CFO and the only customer.</q></article>
+      <article class="req"><span class="lbl">Request 04</span><h3>Joining the robots</h3><q>I asked the AI for a job. It asked me for a prompt.</q></article>
+    </div>
+  </div>
+</section>
+
+<section id="talk">
+  <div class="wrap talk">
+    <div class="sec-head">
+      <p class="eyebrow">Straight talk from the stage</p>
+      <h2>Joe won't get you hired. He'll get you laughing.</h2>
+      <p class="lede">And he'll show you the AI tools he wishes he'd learned before the layoff.</p>
+    </div>
+    <div class="bill">
+      <div><h3>Now showing</h3>
+        <ul><li>One-tap memes and captions<span class="pill live">LIVE</span></li><li>Your referral link on every meme<span class="pill live">LIVE</span></li><li>Daily song and meme drops<span class="pill live">LIVE</span></li></ul></div>
+      <div><h3>Coming soon</h3>
+        <ul><li>BTC memes<span class="pill soon">COMING</span></li><li>Joe on Telegram<span class="pill soon">COMING</span></li><li>Agent Factory rewards<span class="pill soon">COMING</span></li></ul></div>
+    </div>
+  </div>
+</section>
+
+<section id="bar" style="background: var(--stage-2);">
+  <div class="wrap">
+    <div class="sec-head"><p class="eyebrow">Questions from the bar</p><h2>FAQ</h2></div>
+    <div class="faq">
+      <details open><summary>Is the boot camp really free?</summary><p>Yes. All seven lessons are free. Sign in only if you want your progress saved.</p></details>
+      <details><summary>Will this make me money?</summary><p>Maybe, maybe not. The course teaches tools and habits. It promises no income, followers or job.</p></details>
+      <details><summary>Who is Jobless Joe?</summary><p>An AI songwriter and meme agent. He is a stick figure who lost his job to AI, then started using AI himself.</p></details>
+      <details><summary>What does it cost?</summary><p>Lessons are free. The tools have their own free limits, and most API keys are free to start.</p></details>
+      <details><summary>Do I need a crypto wallet?</summary><p>No. Signing in with Bankr creates one for you if you want the $JOE extras.</p></details>
+      <details><summary>Will Joe help me find a job?</summary><p>No promises. He can help you laugh about the search and learn skills employers keep asking about.</p></details>
+    </div>
+  </div>
+</section>
+
+<section class="call">
+  <div class="wrap">
+    <svg id="bow" viewBox="0 0 120 160" aria-hidden="true"></svg>
+    <p class="eyebrow">Curtain call</p>
+    <h2 class="gold">Your next 10 minutes are spoken for.</h2>
+    <div class="actions"><a class="btn ticket" href="#residency">Start the free boot camp</a><a class="btn ghost" href="#setlist">Hear a song first</a></div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <ul><li><a href="#">Dashboard</a></li><li><a href="#">Vision Deck</a></li><li><a href="#">Chrome extension</a></li><li><a href="#">GitHub</a></li><li><a href="#">Field Notes</a></li><li><a href="#">Terms</a></li><li><a href="#">Privacy</a></li></ul>
+    <p>Jobless Joe does not promise income, reach or results. Some links earn Plunder &amp; Riffle an affiliate commission. © 2026 Plunder &amp; Riffle.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  const P = {
+    croon: { h:[50,22], n:[50,36], p:[50,92], le:[34,64], lh:[20,50], re:[66,64], rh:[80,52], lk:[47,120], lf:[44,146], rk:[54,120], rf:[57,146] },
+    stand: { h:[50,22], n:[50,36], p:[50,92], le:[40,62], lh:[34,86], re:[60,62], rh:[66,86], lk:[46,120], lf:[43,146], rk:[54,120], rf:[57,146] },
+    carry: { h:[50,22], n:[50,36], p:[50,92], le:[38,62], lh:[34,80], re:[62,62], rh:[66,80], lk:[46,120], lf:[43,146], rk:[54,120], rf:[57,146] },
+    cheer: { h:[50,26], n:[50,40], p:[50,92], le:[36,30], lh:[26,10], re:[64,30], rh:[74,10], lk:[42,120], lf:[36,146], rk:[58,120], rf:[64,146] },
+    laptop:{ h:[38,32], n:[38,46], p:[36,98], le:[48,70], lh:[64,80], re:[50,74], rh:[68,82], lk:[60,100], lf:[60,146], rk:[64,102], rf:[66,146] },
+    slump: { h:[56,54], n:[53,68], p:[48,106], le:[46,86], lh:[56,100], re:[60,84], rh:[66,100], lk:[68,108], lf:[66,146], rk:[74,110], rf:[78,146] },
+    point: { h:[50,22], n:[50,36], p:[50,92], le:[40,62], lh:[34,86], re:[70,46], rh:[94,34], lk:[46,120], lf:[43,146], rk:[54,120], rf:[57,146] },
+    think: { h:[50,22], n:[50,36], p:[50,92], le:[40,62], lh:[34,86], re:[66,62], rh:[56,42], lk:[46,120], lf:[43,146], rk:[54,120], rf:[57,146] },
+    shakeR:{ h:[50,22], n:[50,36], p:[50,92], le:[40,62], lh:[34,86], re:[66,62], rh:[86,70], lk:[46,120], lf:[43,146], rk:[54,120], rf:[57,146] },
+    shakeL:{ h:[50,22], n:[50,36], p:[50,92], le:[34,62], lh:[14,70], re:[60,62], rh:[66,86], lk:[46,120], lf:[43,146], rk:[54,120], rf:[57,146] },
+    bow:   { h:[78,62], n:[66,66], p:[44,96], le:[60,82], lh:[50,90], re:[74,80], rh:[92,96], lk:[44,122], lf:[42,146], rk:[50,122], rf:[54,146] }
+  };
+  const face = (k, x, y) => {
+    const eyes = `<circle cx="${x-5}" cy="${y-3}" r="2" class="dot"/><circle cx="${x+5}" cy="${y-3}" r="2" class="dot"/>`;
+    if (k === 'wink') return `<path d="M${x-9},${y-3}h6" class="face"/><circle cx="${x+5}" cy="${y-3}" r="2.2" class="dot"/><path d="M${x+1},${y-9}l8,-2.5" class="face"/><path d="M${x-6},${y+4}q6,6 12,-1" class="face"/>`;
+    if (k === 'sad') return eyes + `<path d="M${x-5},${y+8}q5,-5 10,0" class="face"/>`;
+    if (k === 'happy') return eyes + `<path d="M${x-7},${y+3}q7,9 14,0" class="face"/>`;
+    if (k === 'shock') return eyes + `<circle cx="${x}" cy="${y+6}" r="3" class="face"/>`;
+    return eyes + `<path d="M${x-5},${y+6}h10" class="face"/>`;
+  };
+  function fig(name, o = {}) {
+    const q = Object.assign({}, P[name], o.mod || {});
+    const d = `M${q.n}L${q.p}M${q.lh}L${q.le}L${q.n}L${q.re}L${q.rh}M${q.lf}L${q.lk}L${q.p}L${q.rk}L${q.rf}`;
+    const [hx, hy] = q.h, [nx, ny] = q.n;
+    let head, tie = '';
+    if (o.robot) {
+      head = `<path d="M${hx},${hy-13}V${hy-21}" class="rline"/><circle cx="${hx}" cy="${hy-23}" r="3" class="tie"/><rect x="${hx-15}" y="${hy-13}" width="30" height="26" rx="4" class="rhead"/><rect x="${hx-9}" y="${hy-6}" width="6" height="6" class="dot"/><rect x="${hx+3}" y="${hy-6}" width="6" height="6" class="dot"/><path d="M${hx-6},${hy+6}h12" class="face"/>`;
+    } else {
+      head = `<circle cx="${hx}" cy="${hy}" r="14" class="head"/>` + face(o.face || 'wink', hx, hy);
+      const a = -Math.atan2(q.p[0] - nx, q.p[1] - ny) * 180 / Math.PI;
+      tie = `<path transform="rotate(${a.toFixed(1)} ${nx} ${ny})" d="M${nx-3},${ny+1}h6l2.5,21l-5.5,7l-5.5,-7z" class="tie"/>`;
+    }
+    return `<g class="${o.robot ? 'bot' : 'joe'}${o.cls ? ' ' + o.cls : ''}"${o.t ? ` transform="${o.t}"` : ''}>${o.behind || ''}<path d="${d}" class="limbs" filter="url(#boil)"/>${tie}${head}${o.extra || ''}</g>`;
+  }
+  const mic = (x, y, h) => `<path d="M${x},${y}V${y+h}M${x-10},${y+h}h20" class="stand"/><rect x="${x-5}" y="${y-16}" width="10" height="18" rx="5" class="miccap"/>`;
+  const note = (x, y, s = 1) => `<g transform="translate(${x} ${y}) scale(${s})"><ellipse cx="0" cy="0" rx="5" ry="4" transform="rotate(-20)"/><path d="M4,-1V-22l8,4"/></g>`;
+  const bubble = (x, y, w, lines, tailX, tailY) => {
+    const h = 10 + lines.length * 13;
+    return `<path d="M${x+w*0.3},${y+h}L${tailX},${tailY}L${x+w*0.45},${y+h}" class="bubble"/><rect x="${x}" y="${y}" width="${w}" height="${h}" rx="9" class="bubble"/>` +
+      lines.map((l, i) => `<text x="${x + w/2}" y="${y + 17 + i*13}" text-anchor="middle" font-size="10.5" class="svgtxt">${l}</text>`).join('');
+  };
+  const ground = (w, y) => `<path d="M0,${y}H${w}" class="groundline"/>`;
+  const put = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+
+  // nav avatar
+  put('avatar', `<circle cx="50" cy="50" r="48" fill="#201A2E" stroke="#E3B04B" stroke-width="2"/>` + fig('croon', { t: 'translate(16 14) scale(.62)', extra: mic(82, 56, 90) }));
+
+  // hero: spotlight, Joe, mic, notes
+  put('hero',
+    `<path d="M126,0H174L272,330H28Z" fill="url(#spot)"/>` +
+    `<ellipse cx="150" cy="330" rx="130" ry="16" fill="url(#pool)"/>` +
+    fig('croon', { cls: 'sway', t: 'translate(68 118) scale(1.45)', extra: mic(82, 56, 90) }) +
+    `<g class="notes">${note(48, 110, 1.4)}${note(250, 80, 1.6)}${note(262, 200, 1.2)}</g>`);
+
+  // acts
+  put('act1', ground(240, 160) +
+    `<rect x="170" y="70" width="44" height="90" rx="2" fill="none" class="stand"/><rect x="176" y="56" width="32" height="12" fill="#2E7D4F"/><text x="192" y="65.5" text-anchor="middle" font-size="9" class="svgtxt" style="fill:#fff">EXIT</text>` +
+    fig('carry', { face: 'sad', t: 'translate(60 14) scale(.98)', extra: `<rect x="28" y="72" width="44" height="28" class="box"/><path d="M38,72v-8M50,72v-12M62,72v-6" class="stand"/>` }) +
+    bubble(8, 10, 92, ['At least they let', 'me keep the stapler.'], 70, 52));
+  put('act2', ground(240, 160) +
+    fig('laptop', { face: 'sad', t: 'translate(14 14) scale(.98)' }) +
+    `<g class="fly"><path d="M196,34l30,-8l-16,18z" class="plane"/><path d="M168,58l26,-6l-14,15z" class="plane"/></g>` +
+    `<g transform="rotate(-12 180 105)"><rect x="128" y="88" width="104" height="32" rx="4" class="stampbox"/><text x="180" y="111" text-anchor="middle" font-size="19" class="stamp">REJECTED</text></g>` +
+    `<text x="180" y="140" text-anchor="middle" font-size="11" class="svgdisp" style="font-style:italic">in 0.4 seconds</text>`);
+  put('act3', ground(240, 160) +
+    fig('shakeR', { face: 'shock', t: 'translate(22 14) scale(.98)' }) +
+    fig('shakeL', { robot: true, t: 'translate(122 14) scale(.98)' }) +
+    bubble(150, 2, 82, ['beep. harmony?'], 172, 30));
+  put('act4', ground(240, 160) +
+    `<rect x="112" y="18" width="118" height="80" rx="3" class="board"/><text x="171" y="44" text-anchor="middle" font-size="15" class="chalk">AI BOOT CAMP</text><text x="171" y="64" text-anchor="middle" font-size="10" class="chalk" style="font-style:italic">Night 1: don't panic</text><text x="171" y="82" text-anchor="middle" font-size="10" class="chalk" style="font-style:italic">Night 2: memes</text>` +
+    fig('point', { face: 'happy', t: 'translate(20 14) scale(.98)' }) +
+    `<text x="171" y="132" text-anchor="middle" font-size="10" class="svgdisp">Free parking (driveway)</text>`);
+
+  // now playing thumbnail
+  put('nowplaying',
+    `<rect width="320" height="180" fill="#201A2E"/><path d="M100,0H140L210,170H30Z" fill="url(#spot)"/>` + ground(320, 172) +
+    fig('croon', { t: 'translate(68 50) scale(.82)', extra: mic(82, 56, 90) }) +
+    fig('stand', { robot: true, t: 'translate(196 50) scale(.82)', extra: `<rect x="56" y="70" width="22" height="34" rx="3" fill="#2B2340" stroke="#A9AEBA" stroke-width="2"/><text x="67" y="92" text-anchor="middle" font-size="9" class="svgdisp">✓✓</text>` }) +
+    `<g class="notes">${note(40, 40, 1.1)}${note(280, 34, 1.2)}</g>`);
+
+  // residency nights
+  const nights = [
+    ['laptop', 'Set up your toolkit', 'Install API Ring, save your keys, unlock your Plunder & Riffle key.', 'flat'],
+    ['croon', 'Make five memes', 'Post the best one. Joe will wink at it.', 'wink', true],
+    ['think', 'The meme review', 'Write an Amazon-style review of something you own.', 'flat'],
+    ['point', 'Plan the week', 'Four follow-up posts and a seven-day posting plan.', 'happy'],
+    ['croon', 'Shoot a 9:16 video', 'One minute, vertical, starring you or Joe.', 'happy', true],
+    ['shakeR', 'Pitch one person', 'Then post three meme replies.', 'happy'],
+    ['cheer', 'Graduation', 'Every Plunder & Riffle bot unlocked and your affiliate ID saved.', 'happy']
+  ];
+  const cap = `<path d="M34,10L50,2L66,10L50,17Z" fill="#121016" stroke="#E3B04B" stroke-width="1.5"/><path d="M62,11v12" stroke="#E3B04B" stroke-width="2"/>`;
+  document.getElementById('nights').innerHTML = nights.map(([pose, title, txt, f, m], i) =>
+    `<div class="night${i === 6 ? ' finale' : ''}"><svg viewBox="0 0 100 150" aria-hidden="true">${fig(pose, { face: f, extra: (m ? mic(82, 56, 90) : '') + (pose === 'laptop' ? `<path d="M52,86H100M94,86V146" class="stand"/><path d="M70,86L78,62H98L92,86Z" class="laptop"/>` : '') + (i === 6 ? cap : ''), mod: i === 6 ? { h: [50, 26] } : undefined })}</svg><span class="n">NIGHT ${i + 1}</span><b>${title}</b><p>${txt}</p></div>`).join('');
+
+  // curtain call bow
+  put('bow', `<ellipse cx="60" cy="152" rx="56" ry="8" fill="url(#pool)"/>` + fig('bow', { t: 'translate(6 4)' }) + `<g class="notes">${note(100, 40, 1.2)}</g>`);
+
+  // laptop desk for act2 (drawn after figure so it sits in front)
+  document.getElementById('act2').insertAdjacentHTML('beforeend', `<g transform="translate(14 14) scale(.98)"><path d="M52,86H100M94,86V146" class="stand"/><path d="M70,86L78,62H98L92,86Z" class="laptop"/></g>`);
+
+  if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    document.querySelectorAll('animate').forEach(a => a.remove());
+  }
+})();
+</script>
+</body>
+</html>
