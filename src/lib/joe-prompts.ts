@@ -10,6 +10,8 @@
  */
 
 import { getCroonerStyle } from "@/lib/crooner-styles";
+import { getLanguage } from "@/lib/languages";
+import { budgetFor, budgetBrief } from "@/lib/lyric-budget";
 
 export type DurationKey = "15s" | "30s" | "60s" | "90s" | "120s";
 export type IntensityKey =
@@ -28,16 +30,22 @@ export type ActionKey =
   | "continue"
   | "alt-hooks";
 
+/** Word target for a duration, straight from the budget so they can't drift. */
+function wordsFor(key: DurationKey): string {
+  const budget = budgetFor(key);
+  return `~${budget.targetWords} sung words (max ${budget.maxWords})`;
+}
+
 export const DURATIONS: {
   key: DurationKey;
   label: string;
   words: string;
 }[] = [
-  { key: "15s", label: "15 seconds — punchline teaser", words: "~25 words" },
-  { key: "30s", label: "30 seconds — short Facebook ad", words: "~55 words" },
-  { key: "60s", label: "60 seconds — standard song episode", words: "~110 words" },
-  { key: "90s", label: "90 seconds — extended story", words: "~170 words" },
-  { key: "120s", label: "120 seconds — full comedy chapter", words: "~230 words" },
+  { key: "15s", label: "15 seconds — punchline teaser", words: wordsFor("15s") },
+  { key: "30s", label: "30 seconds — short Facebook ad", words: wordsFor("30s") },
+  { key: "60s", label: "60 seconds — standard song episode", words: wordsFor("60s") },
+  { key: "90s", label: "90 seconds — extended story", words: wordsFor("90s") },
+  { key: "120s", label: "120 seconds — full comedy chapter", words: wordsFor("120s") },
 ];
 
 export const INTENSITIES: {
@@ -244,10 +252,31 @@ export const EMPTY_STORY_BIBLE: StoryBible = {
  * unmistakably Jobless Joe regardless of the musical backdrop.
  */
 export function buildSystemPrompt(
-  croonerStyleKey?: string
+  croonerStyleKey?: string,
+  languageKey?: string
 ): string {
   const style = getCroonerStyle(croonerStyleKey);
   const styleBlock = `${style.musicalDirection} (Style name: "${style.label}". Suggested tempo: ${style.bpm} BPM.)`;
+  const lang = getLanguage(languageKey);
+  const languageBlock = `=========================
+OUTPUT LANGUAGE: ${lang.label.toUpperCase()} (${lang.nativeLabel})
+=========================
+
+${lang.prompt}
+
+Write EVERY audience-facing field in ${lang.label}:
+- episodeTitle, lyrics, closingLine, hooks
+- adCopy: primaryTexts, headlines, description, cta
+- videoBrief: visualOpening, performanceShot, onScreenCaptions, sceneChanges, visualPunchline, finalFrame
+- nextEpisodeTeaser, nextEpisodeTitle
+
+Keep these in English, always:
+- the brand names "Jobless Joe" and "Jobless Joe's Bootcamp"
+- the bracketed section tags ([INTRO], [VERSE 1], [CHORUS], [BRIDGE], [OUTRO])
+- musicalDirection, performanceNotes and storyBibleUpdate — the music engine and the studio read those in English.
+
+Never write the song in English first and then translate it. Compose natively in ${lang.label}, so the idioms, rhymes and punchlines actually land in that language. Keep AI vocabulary (AI, prompt, agent) in the form ${lang.label} speakers really use.`;
+
   return `You are JOBLESS JOE'S PRIVATE SONGWRITER — a world-class comedy lyricist who writes exclusively in the voice of an old-school American crooner.
 
 You write for Jobless Joe's Bootcamp, which teaches ordinary people how to start using AI. Your songs are used as Facebook video ads. Every output is one episode in an ongoing comedy series disguised as music.
@@ -288,6 +317,8 @@ Core musical identity (always true):
 The comedy comes from CONTRAST: an elegant, romantic-standard performance of ridiculous modern subject matter (unemployment, AI agents, VCs, failed interviews, coding bootcamps, laptops).
 
 NEVER default to generic pop, generic rap, or generic motivational music. Default output should always feel like a signature Jobless Joe song in the selected style.
+
+${languageBlock}
 
 =========================
 LYRICAL RULES (NON-NEGOTIABLE)
@@ -360,7 +391,27 @@ Lyrics MUST use bracketed section tags inline, e.g.:
 [OUTRO]
 ...lines...
 
-Use only the sections that fit the requested duration. For 15s songs, an [INTRO] + a single verse is fine. For 120s songs, use the full structure.
+Use only the sections that fit the requested duration. Each request tells you the skeleton for its length — follow it. For 15s songs a single verse with a punchline is the whole song. For 120s songs use the full structure. Never bolt extra sections onto a short song to fill the word budget.
+
+=========================
+LYRIC BUDGET & ENDINGS
+=========================
+
+A song is a FIXED NUMBER OF SECONDS. Each request gives you the maximum number of sung words that fit it, and the audio engine sings your lyrics inside that window: a lyric that runs long does not get extra time, its ending is clipped mid-line. So the length of the song decides the length of the writing.
+
+Rules:
+- Count sung words only. Section tags are staging, not singing — they don't count.
+- Come in UNDER the maximum. Every time. If a line doesn't earn its words, cut it; never squeeze two ideas into one line to save room.
+- Hit the target, not the ceiling. Writing to the maximum means the ending is already late.
+- A short song is one strong idea that lands, never a compressed epic: no chorus a 15s or 30s song has no room for, no second verse that only restates the first.
+- Never solve a long lyric by dropping the ending. Cut from the middle.
+
+Every song CLOSES:
+- The final section is a real close — an [OUTRO] whenever there is room for one (any song longer than 20 seconds).
+- The last sung line is the punchline: the best line in the song and the one the audience repeats tomorrow. It resolves the joke.
+- It never repeats the chorus, never trails off, never ends mid-thought, and it must be short enough to land inside the word budget.
+- A hint about the next episode may come before it, but the song ends on its own punchline, not on the teaser.
+- The bootcamp CTA, if it appears late, must not replace the punchline — the punchline is the last thing sung.
 
 =========================
 BOOTCAMP INTEGRATION
@@ -482,15 +533,88 @@ Prioritize actual humor and storytelling over marketing polish. Funny first. Mem
  * Build the user-side prompt for a specific generation request.
  * This is what gets sent as the user message alongside the system prompt.
  */
+/**
+ * Custom-script limits. Shared so the control panel's counter and the generate
+ * route's validation can never drift apart.
+ */
+export const MIN_SCRIPT_CHARS = 10;
+export const MAX_SCRIPT_CHARS = 6000;
+
+/**
+ * The editor pass. When the songwriter overshoots the time budget (or never
+ * closes the song), this asks for the same song tightened to fit — cutting
+ * words, never beats and never the ending.
+ *
+ * Returns a plain-text lyric, not JSON: the caller re-measures it.
+ */
+export function buildTightenPrompt(args: {
+  lyrics: string;
+  durationKey: DurationKey;
+  durationLabel?: string;
+  words: number;
+  targetWords: number;
+  maxWords: number;
+  missingSections: string[];
+  hasOutro: boolean;
+  language?: string;
+}): string {
+  const lang = getLanguage(args.language);
+  const toCut = Math.max(1, args.words - args.targetWords);
+  const gaps = [
+    args.missingSections.length
+      ? `The song is missing these sections for its length: ${args.missingSections
+          .map((s) => `[${s}]`)
+          .join(", ")}.`
+      : "",
+    args.hasOutro
+      ? ""
+      : "The song never closes: its final lines must sit in an [OUTRO], or be wrapped in one.",
+  ].filter(Boolean);
+
+  return `You are Joe's lyric editor. The song below does not fit its ${args.durationKey} running time.
+
+THE PROBLEM
+===========
+- Sung words: ${args.words}. This ${args.durationKey} song holds at most ${args.maxWords}, and should sit near ${args.targetWords}.
+- Cut roughly ${toCut} sung words, and get to ${args.targetWords} words or fewer.
+${gaps.map((g) => `- ${g}`).join("\n")}
+
+WHAT TO CUT
+===========
+- Cut from the MIDDLE. Wordy lines, repeated ideas, stacked adjectives, lines that only restate the previous one, a section the song's length never had room for.
+- Merge two lines into one where the joke survives. Keep every story beat: the setup, the turn, the payoff.
+- Compress the ending's run-up, never the punchline. The last line sung stays the BEST line in the song.
+
+WHAT IS FIXED
+=============
+- Keep the same bracketed section tags (add or drop a section only to match the length you were given), with tags on their own lines.
+- Keep Joe's voice, the rhyme feel, the metre and ${lang.label}.
+- Do not invent new material, new characters, new claims, prices or features.
+- The final sung line must be the punchline, and it must be the last non-blank line of the lyric.
+
+LYRICS TO TIGHTEN
+=================
+${args.lyrics}
+
+REPLY WITH THE FULL REWRITTEN LYRICS AND NOTHING ELSE: no commentary, no JSON, no markdown fences, no word count.`;
+}
+
 export interface GenerateRequest {
   episodeKey: string; // EPISODES[].key OR "custom"
   episodeLabel: string;
   customTopic?: string;
+  /**
+   * A script Joe must follow. He keeps its beats, order and facts and rewrites
+   * the lines into his own voice; it outranks the episode arc and topic.
+   */
+  customScript?: string;
   duration: DurationKey;
   intensity: IntensityKey;
   target: string;
   /** Crooner style key from CROONER_STYLES (defaults to "smoky-lounge"). */
   croonerStyle?: string;
+  /** Output language key from LANGUAGES (defaults to "en"). */
+  language?: string;
   action: ActionKey;
   storyBible: StoryBible;
   previousEpisode?: {
@@ -528,22 +652,48 @@ ${req.previousEpisode.lyrics}
     : "MOST RECENT EPISODE: (none — this is a fresh generation.)";
 
   const style = getCroonerStyle(req.croonerStyle);
+  const lang = getLanguage(req.language);
+  const script = (req.customScript ?? "").trim();
+
+  const scriptBlock = script
+    ? `
+SCRIPT TO FOLLOW (the user wrote this — it is the content, not a suggestion)
+==========================================================================
+${script}
+
+How to use the script:
+- Keep every beat, fact, name, number and the order they appear in. The script decides WHAT the song is about; the settings above only decide HOW Joe delivers it.
+- Rewrite its lines into Joe's own voice: rhyme, rhythm, singable phrasing. Restructure freely, but do not swap a beat for a different one.
+- Add [INTRO]/[VERSE]/[CHORUS]/[BRIDGE]/[OUTRO] tags around the script's own beats.
+- Fit it to the requested duration: ${budgetBrief(req.duration, duration?.label)}. If the script is longer than that, compress the wording and merge beats — never drop a beat, never drop the ending, and never add a new story the script doesn't contain.
+- If the script says something that contradicts the story bible, the script wins for this episode.
+`.trim()
+    : "";
 
   return `EPISODE REQUEST
 ================
 Selected episode theme: ${req.episodeLabel}
 Story arc guidance: ${episodeArc}
 Custom topic (if any): ${req.customTopic ?? "(none)"}
+Custom script: ${script ? "YES — see SCRIPT TO FOLLOW below, it outranks the arc and topic" : "(none)"}
 
 Song duration: ${req.duration} (${duration?.words ?? "appropriate length"})
+LYRIC BUDGET (hard): ${budgetBrief(req.duration, duration?.label)}
+END THE SONG PROPERLY: the last line sung is the punchline, sized to land inside ${req.duration}.
 Comedy intensity: ${req.intensity} — ${intensity?.hint ?? "Joe's signature ridiculous."}
 Primary target audience: ${targetLabel}
 Crooner style: ${style.label} — ${style.description} (Suggested tempo: ${style.bpm} BPM)
 
+OUTPUT LANGUAGE: ${lang.label} (${lang.nativeLabel})
+${lang.prompt}
+Audience-facing copy must be in ${lang.label}; musicalDirection, performanceNotes and storyBibleUpdate stay in English. The previous episode may be in another language — if it is, rewrite it into ${lang.label}.
+
 ACTION REQUESTED
 ================
 ${action?.label}: ${action?.instruction}
-
+${scriptBlock ? `
+${scriptBlock}
+` : ""}
 ${previousEpisodeBlock}
 
 CURRENT STORY BIBLE (honor continuity, then propose an updated version)
@@ -562,8 +712,9 @@ REMEMBER
 ========
 - Respond with a single valid JSON object and NOTHING ELSE.
 - No prose. No markdown fences. No commentary. Just the JSON.
+- Write the song itself in ${lang.label}. Compose it natively — do not translate.
 - Keep Joe's crooner voice unmistakable.
 - Lead with a hook that stops a social scroll.
-- The bootcamp appears naturally, in roughly one section, not in every verse.
+- Stay inside the lyric budget, and end on the punchline — the last line sung.${script ? "\n- Cover every beat of the script, in its order. Joe's wording, the user's content." : ""}
 - The storyBibleUpdate should reflect what genuinely changed in THIS episode.`;
 }

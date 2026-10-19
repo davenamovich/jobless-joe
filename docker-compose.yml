@@ -39,6 +39,12 @@ x-default-env: &default-env
   OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://ollama:11434/v1}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
   OPENAI_MODEL: ${OPENAI_MODEL:-ace-1.5}
+  # Telegram bot (optional) — see docs/telegram-bot.md
+  TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+  TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
+  TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
+  TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
+  HERENOW_API_KEY: ${HERENOW_API_KEY:-}
   # Next.js runtime config
   NODE_ENV: production
   PORT: 3000

@@ -22,13 +22,45 @@ import ZAI from "z-ai-web-dev-sdk";
 import { db } from "@/lib/db";
 
 export type BackendKey = "zai" | "openai-compat";
+export type AudioEngine = "zai" | "acestep";
 
 export interface BackendConfig {
   activeBackend: BackendKey;
   openaiBaseUrl: string;
   openaiApiKey: string;
   openaiModel: string;
+  /** Which engine renders the song audio. Text generation is unaffected. */
+  audioEngine: AudioEngine;
+  /** ACE-Step API base, e.g. http://localhost:8001 or https://abc.ngrok.app */
+  aceStepBaseUrl: string;
+  /** ACE-Step model ID from GET /v1/models */
+  aceStepModel: string;
+
+  /** Plunder & Riffle MCP endpoint (video engine) */
+  prMcpUrl: string;
+  /** Agent API key for Plunder & Riffle (sent as Authorization: Bearer) */
+  prApiKey: string;
+  /** Referral code appended to P&R links (?ref=...) */
+  prRef: string;
+  /** Public https base serving /audio/*; empty = publish via here.now */
+  publicBaseUrl: string;
+  /** Free-course CTA link */
+  courseUrl: string;
+
+  /** YouTube upload (Google Cloud OAuth client + consent-granted token) */
+  ytClientId: string;
+  ytClientSecret: string;
+  ytRefreshToken: string;
+  ytChannelId: string;
+  ytChannelTitle: string;
+  /** unlisted | public | private */
+  ytPrivacy: string;
 }
+
+export const ACE_STEP_DEFAULT_URL = "http://localhost:8001";
+export const ACE_STEP_DEFAULT_MODEL = "acestep/acestep-v15-turbo";
+export const PR_MCP_DEFAULT_URL = "https://bot.plunderandriffle.com/api/mcp";
+export const COURSE_DEFAULT_URL = "https://www.plunderandriffle.com/joblessjoe";
 
 export interface ChatResult {
   content: string;
@@ -43,6 +75,20 @@ const DEFAULT_CONFIG: BackendConfig = {
   openaiBaseUrl: "",
   openaiApiKey: "",
   openaiModel: "",
+  audioEngine: "zai",
+  aceStepBaseUrl: ACE_STEP_DEFAULT_URL,
+  aceStepModel: ACE_STEP_DEFAULT_MODEL,
+  prMcpUrl: PR_MCP_DEFAULT_URL,
+  prApiKey: "",
+  prRef: "",
+  publicBaseUrl: "",
+  courseUrl: COURSE_DEFAULT_URL,
+  ytClientId: "",
+  ytClientSecret: "",
+  ytRefreshToken: "",
+  ytChannelId: "",
+  ytChannelTitle: "",
+  ytPrivacy: "unlisted",
 };
 
 /** Read the current backend config from DB, falling back to env vars. */
@@ -52,6 +98,10 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
   const envUrl = process.env.OPENAI_BASE_URL;
   const envKey = process.env.OPENAI_API_KEY;
   const envModel = process.env.OPENAI_MODEL;
+  const envAudioEngine =
+    process.env.AUDIO_ENGINE === "acestep" || process.env.AUDIO_ENGINE === "zai"
+      ? (process.env.AUDIO_ENGINE as AudioEngine)
+      : undefined;
 
   if (envBackend || envUrl) {
     return {
@@ -59,6 +109,20 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
       openaiBaseUrl: envUrl ?? "",
       openaiApiKey: envKey ?? "",
       openaiModel: envModel ?? "",
+      audioEngine: envAudioEngine ?? DEFAULT_CONFIG.audioEngine,
+      aceStepBaseUrl: process.env.ACESTEP_BASE_URL ?? ACE_STEP_DEFAULT_URL,
+      aceStepModel: process.env.ACESTEP_MODEL ?? ACE_STEP_DEFAULT_MODEL,
+      prMcpUrl: process.env.PR_MCP_URL ?? PR_MCP_DEFAULT_URL,
+      prApiKey: process.env.PR_API_KEY ?? "",
+      prRef: process.env.PR_REF ?? "",
+      publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
+      courseUrl: process.env.COURSE_URL ?? COURSE_DEFAULT_URL,
+      ytClientId: process.env.YT_CLIENT_ID ?? "",
+      ytClientSecret: process.env.YT_CLIENT_SECRET ?? "",
+      ytRefreshToken: process.env.YT_REFRESH_TOKEN ?? "",
+      ytChannelId: "",
+      ytChannelTitle: "",
+      ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
     };
   }
 
@@ -71,6 +135,20 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
       openaiBaseUrl: row.openaiBaseUrl || "",
       openaiApiKey: row.openaiApiKey || "",
       openaiModel: row.openaiModel || "",
+      audioEngine: (row.audioEngine as AudioEngine) ?? "zai",
+      aceStepBaseUrl: row.aceStepBaseUrl || ACE_STEP_DEFAULT_URL,
+      aceStepModel: row.aceStepModel || ACE_STEP_DEFAULT_MODEL,
+      prMcpUrl: row.prMcpUrl || PR_MCP_DEFAULT_URL,
+      prApiKey: row.prApiKey || "",
+      prRef: row.prRef || "",
+      publicBaseUrl: row.publicBaseUrl || "",
+      courseUrl: row.courseUrl || COURSE_DEFAULT_URL,
+      ytClientId: row.ytClientId || "",
+      ytClientSecret: row.ytClientSecret || "",
+      ytRefreshToken: row.ytRefreshToken || "",
+      ytChannelId: row.ytChannelId || "",
+      ytChannelTitle: row.ytChannelTitle || "",
+      ytPrivacy: row.ytPrivacy || "unlisted",
     };
   } catch {
     return DEFAULT_CONFIG;
@@ -87,12 +165,40 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       openaiBaseUrl: cfg.openaiBaseUrl,
       openaiApiKey: cfg.openaiApiKey,
       openaiModel: cfg.openaiModel,
+      audioEngine: cfg.audioEngine,
+      aceStepBaseUrl: cfg.aceStepBaseUrl,
+      aceStepModel: cfg.aceStepModel,
+      prMcpUrl: cfg.prMcpUrl,
+      prApiKey: cfg.prApiKey,
+      prRef: cfg.prRef,
+      publicBaseUrl: cfg.publicBaseUrl,
+      courseUrl: cfg.courseUrl,
+      ytClientId: cfg.ytClientId,
+      ytClientSecret: cfg.ytClientSecret,
+      ytRefreshToken: cfg.ytRefreshToken,
+      ytChannelId: cfg.ytChannelId,
+      ytChannelTitle: cfg.ytChannelTitle,
+      ytPrivacy: cfg.ytPrivacy,
     },
     update: {
       activeBackend: cfg.activeBackend,
       openaiBaseUrl: cfg.openaiBaseUrl,
       openaiApiKey: cfg.openaiApiKey,
       openaiModel: cfg.openaiModel,
+      audioEngine: cfg.audioEngine,
+      aceStepBaseUrl: cfg.aceStepBaseUrl,
+      aceStepModel: cfg.aceStepModel,
+      prMcpUrl: cfg.prMcpUrl,
+      prApiKey: cfg.prApiKey,
+      prRef: cfg.prRef,
+      publicBaseUrl: cfg.publicBaseUrl,
+      courseUrl: cfg.courseUrl,
+      ytClientId: cfg.ytClientId,
+      ytClientSecret: cfg.ytClientSecret,
+      ytRefreshToken: cfg.ytRefreshToken,
+      ytChannelId: cfg.ytChannelId,
+      ytChannelTitle: cfg.ytChannelTitle,
+      ytPrivacy: cfg.ytPrivacy,
     },
   });
 }
@@ -171,6 +277,8 @@ async function chatOpenAICompat(
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    // Free ngrok tunnels may serve an HTML warning page to browser-like clients.
+    "ngrok-skip-browser-warning": "true",
   };
   if (cfg.openaiApiKey.trim()) {
     headers["Authorization"] = `Bearer ${cfg.openaiApiKey.trim()}`;

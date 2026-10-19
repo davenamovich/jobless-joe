@@ -21,16 +21,22 @@ import {
   Quote,
   Send,
   Sparkles,
+  Timer,
   Type,
   Video,
 } from "lucide-react";
 import { LyricsView } from "./LyricsView";
+import { analyzeLyricFit } from "@/lib/lyric-budget";
 import type { SongOutput } from "@/lib/joe-prompts";
 import type { WallSummary } from "@/lib/walls";
 import { toast } from "sonner";
 
 interface Props {
   output: SongOutput;
+  /** Duration key ("60s") or label the song was written for — drives the fit check. */
+  durationKey?: string;
+  /** Set when the editor pass just shortened this lyric to fit its time. */
+  tightened?: boolean;
   episodeId?: string;
   walls: WallSummary[];
   activeWallId: string | null;
@@ -40,6 +46,8 @@ interface Props {
 
 export function OutputDisplay({
   output,
+  durationKey,
+  tightened,
   episodeId,
   walls,
   activeWallId,
@@ -161,6 +169,11 @@ export function OutputDisplay({
                 </p>
               </div>
             )}
+            <LyricFitNote
+              lyrics={output.lyrics}
+              durationKey={durationKey ?? output.duration}
+              tightened={tightened}
+            />
             <LyricsView lyrics={output.lyrics} />
 
             {output.closingLine && (
@@ -432,6 +445,51 @@ function CopyBlock({ text }: { text: string }) {
       >
         <Copy className="h-3.5 w-3.5" />
       </Button>
+    </div>
+  );
+}
+
+/**
+ * How the lyric sits in the song's running time. The audio engine sings inside
+ * an exact number of seconds, so a lyric past the ceiling is the one thing that
+ * silently ruins an ending — this says so before it gets rendered.
+ */
+function LyricFitNote({
+  lyrics,
+  durationKey,
+  tightened,
+}: {
+  lyrics: string;
+  durationKey: string;
+  tightened?: boolean;
+}) {
+  const fit = analyzeLyricFit(lyrics, durationKey);
+  const good = fit.fits;
+  const label = good
+    ? `${fit.words} sung words · fits ${fit.seconds}s (target ~${fit.targetWords})`
+    : fit.overBy > 0
+      ? `${fit.words} sung words · ${fit.seconds}s holds ${fit.maxWords} — the ending may clip`
+      : `${fit.words} sung words · no closing [OUTRO] for ${fit.seconds}s`;
+  return (
+    <div
+      className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${
+        good
+          ? "border-emerald-500/30 bg-emerald-500/5 text-emerald-700 dark:text-emerald-400"
+          : "border-amber-500/40 bg-amber-500/5 text-amber-700 dark:text-amber-400"
+      }`}
+    >
+      <Timer className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+      <span className="leading-snug">
+        {label}
+        {tightened && (
+          <span className="ml-1 italic">
+            — Joe tightened it to land on the punchline.
+          </span>
+        )}
+        <span className="block text-muted-foreground">
+          Last line sung: “{fit.lastLine}”
+        </span>
+      </span>
     </div>
   );
 }

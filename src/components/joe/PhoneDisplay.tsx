@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { usePlayback, effectiveDuration } from "@/lib/playback-store";
 import { durationToSeconds } from "@/lib/walls";
 import { getVoice } from "@/lib/voices";
@@ -25,7 +26,24 @@ import { cn } from "@/lib/utils";
  * Lyric captions now sync to the actual audio position via ontimeupdate —
  * no more fake 1s ticker.
  */
-export function PhoneDisplay() {
+interface PhoneVideo {
+  id: string;
+  status: string;
+  pageUrl: string;
+  posterUrl: string;
+  frames?: string[];
+  mp4Url: string;
+  /** Our own copy of the MP4 — outlives P&R's ~24h render link. */
+  localMp4?: string;
+  audioUrl: string;
+  /** YouTube upload state: "" | publishing | published | failed */
+  ytStatus?: string;
+  ytUrl?: string;
+  ytCaptions?: boolean;
+  ytError?: string;
+}
+
+export function PhoneDisplay({ episodeId }: { episodeId?: string }) {
   const track = usePlayback((s) => s.track);
   const isPlaying = usePlayback((s) => s.isPlaying);
   const positionSec = usePlayback((s) => s.positionSec);
@@ -50,6 +68,274 @@ export function PhoneDisplay() {
   const playEntireRef = usePlayback((s) => s.playEntireClip);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // === The episode's P&R video (shown on the phone) ===
+  // Stored with its episode so a stale video never shows on the next song.
+  const [videoState, setVideoState] = useState<{
+    episodeId: string;
+    video: PhoneVideo | null;
+  } | null>(null);
+  const [courseUrl, setCourseUrl] = useState("");
+  const [dismissedFor, setDismissedFor] = useState<string | null>(null);
+
+  // === In-phone Joe TV ===
+  // The P&R pack is a page, not a file, and its CSP forbids embedding. So the
+  // phone plays the pack's 9:16 frames over the song audio itself — no
+  // navigating away. Rendering the MP4 upgrades this to the real video.
+  const [tvOpen, setTvOpen] = useState(false);
+  const [tvPlaying, setTvPlaying] = useState(false);
+  const [tvProgress, setTvProgress] = useState(0);
+  const [tvFrame, setTvFrame] = useState(0);
+  /** How long each pack frame holds the screen. */
+  const frameSeconds = 10;
+  const [tvError, setTvError] = useState<string | null>(null);
+  /**
+   * The episode's own song MP3, found even when no wall track is loaded — the
+   * phone is often opened straight from the output panel.
+   *
+   * The pack's `video.audioUrl` points at P&R's anonymous host, whose files are
+   * deleted after ~24h, so it is only ever a last resort.
+   */
+  const [episodeAudio, setEpisodeAudio] = useState<{
+    episodeId: string;
+    url: string;
+  } | null>(null);
+  const [mp4Busy, setMp4Busy] = useState(false);
+  const [ytBusy, setYtBusy] = useState(false);
+  const previewAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // A track loaded from the wall wins; otherwise show the episode in the
+  // output panel, so a freshly made video appears on the phone right away.
+  const videoEpisodeId = track?.episodeId ?? episodeId ?? null;
+
+  useEffect(() => {
+    if (!videoEpisodeId) return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/video?episodeId=${encodeURIComponent(videoEpisodeId)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) return;
+        const j = await res.json();
+        if (cancelled) return;
+        setVideoState({
+          episodeId: videoEpisodeId,
+          video: (j.video as PhoneVideo | null) ?? null,
+        });
+        if (j.courseUrl) setCourseUrl(j.courseUrl);
+      } catch {
+        // Offline or no video yet — the song view stays.
+      }
+    };
+    load();
+    const interval = setInterval(load, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [videoEpisodeId]);
+
+  const video =
+    videoState && videoState.episodeId === videoEpisodeId
+      ? videoState.video
+      : null;
+  const frames = useMemo(() => {
+    if (!video) return [];
+    if (video.frames?.length) return video.frames;
+    return video.posterUrl ? [video.posterUrl] : [];
+  }, [video]);
+  const hasVideo = Boolean(video && (video.mp4Url || video.posterUrl));
+  // Dismissal is per episode, so a new song always starts on the video.
+  const showVideo =
+    hasVideo && dismissedFor !== videoEpisodeId;
+
+  // Fresh episode → the TV starts closed on the poster.
+  useEffect(() => {
+    setTvOpen(false);
+    setTvPlaying(false);
+    setTvProgress(0);
+    setTvFrame(0);
+    setTvError(null);
+  }, [videoEpisodeId]);
+
+  // Resolve same-origin audio for the episode on screen, whatever voice it was
+  // rendered in. Runs even before the TV opens so the first tap starts sound.
+  useEffect(() => {
+    if (!videoEpisodeId) {
+      setEpisodeAudio(null);
+      return;
+    }
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const res = await fetch(
+          `/api/audio/${encodeURIComponent(videoEpisodeId)}`,
+          { cache: "no-store" }
+        );
+        if (!res.ok) return;
+        const j = (await res.json()) as {
+          tracks?: { audioUrl?: string | null }[];
+        };
+        const url = (j.tracks ?? [])
+          .map((t) => t.audioUrl)
+          .filter((u): u is string => Boolean(u))
+          .pop();
+        if (cancelled) return;
+        setEpisodeAudio(url ? { episodeId: videoEpisodeId, url } : null);
+      } catch {
+        // Offline — the P&R link is still there as a fallback.
+      }
+    };
+    load();
+    const interval = setInterval(load, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [videoEpisodeId]);
+
+  // Same-origin first, P&R last (it expires).
+  const tvAudioUrl =
+    track?.audioUrl ||
+    (episodeAudio && episodeAudio.episodeId === videoEpisodeId
+      ? episodeAudio.url
+      : null) ||
+    video?.audioUrl ||
+    null;
+  const tvUsingExpiringAudio =
+    Boolean(tvAudioUrl) && tvAudioUrl === video?.audioUrl && !track?.audioUrl;
+
+  const startTv = useCallback(() => {
+    if (!video) return;
+    setTvOpen(true);
+    setTvError(null);
+    setTvProgress(0);
+    setTvFrame(0);
+    // The phone's song player and Joe TV must never sing over each other.
+    const playback = usePlayback.getState();
+    if (playback.isPlaying) playback.pause();
+  }, [video]);
+
+  const toggleTv = useCallback(() => {
+    const audio = previewAudioRef.current;
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play().catch(() => setTvError("Tap ▶ to start the sound."));
+    } else {
+      audio.pause();
+      setTvPlaying(false);
+    }
+  }, []);
+
+  // Autoplay is allowed here because opening the TV is a user gesture.
+  useEffect(() => {
+    if (!tvOpen || video?.mp4Url) return;
+    const audio = previewAudioRef.current;
+    if (!audio) return;
+    audio
+      .play()
+      .then(() => setTvPlaying(true))
+      .catch(() => setTvError("Tap ▶ to start the sound."));
+  }, [tvOpen, video?.mp4Url, tvAudioUrl]);
+
+  // While the real MP4 renders, poll the job (free) and swap it in.
+  useEffect(() => {
+    if (video?.status !== "mp4_rendering" || !videoEpisodeId) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/video?jobId=${encodeURIComponent(video.id)}`, {
+          cache: "no-store",
+        });
+        if (!res.ok) return;
+        const j = await res.json();
+        if (cancelled || !j.video) return;
+        setVideoState({ episodeId: videoEpisodeId, video: j.video as PhoneVideo });
+        if (j.video.mp4Url) toast.success("Joe's video is ready.");
+      } catch {
+        // Provider hiccup — the next tick retries.
+      }
+    };
+    const interval = setInterval(poll, 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [video?.status, video?.id, videoEpisodeId]);
+
+  const renderMp4 = useCallback(async () => {
+    if (!video || mp4Busy || !videoEpisodeId) return;
+    setMp4Busy(true);
+    setTvError(null);
+    try {
+      const res = await fetch("/api/video/mp4", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: video.id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "MP4 render failed.");
+      if (j.video) {
+        setVideoState({ episodeId: videoEpisodeId, video: j.video as PhoneVideo });
+      }
+      if (j.video?.mp4Url) toast.success("MP4 ready — playing in the phone.");
+      else if (j.video?.error) setTvError(j.video.error);
+      else toast.message("Rendering the MP4 — the phone will switch over when it lands.");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "MP4 render failed.";
+      setTvError(msg);
+      toast.error(msg);
+    } finally {
+      setMp4Busy(false);
+    }
+  }, [video, mp4Busy, videoEpisodeId]);
+
+  /**
+   * Upload the finished MP4 to YouTube (description, tags and an SRT caption
+   * track built from the pack page). P&R has no YouTube tool, so this goes
+   * straight to the channel connected in Backend settings.
+   */
+  const publishYt = useCallback(async () => {
+    if (!video || ytBusy || !videoEpisodeId) return;
+    setYtBusy(true);
+    try {
+      const res = await fetch("/api/youtube/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId: video.id }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "YouTube upload failed.");
+
+      // Re-read the job so the phone shows the live link.
+      const fresh = await fetch(
+        `/api/video?episodeId=${encodeURIComponent(videoEpisodeId)}`,
+        { cache: "no-store" }
+      )
+        .then((r) => r.json())
+        .catch(() => null);
+      if (fresh?.video) {
+        setVideoState({ episodeId: videoEpisodeId, video: fresh.video as PhoneVideo });
+      }
+      toast.success(
+        j.result?.captions
+          ? "On YouTube with captions."
+          : "On YouTube.",
+        { description: j.result?.url }
+      );
+      if (j.result && !j.result.captions && j.result.captionNote) {
+        toast.message("No caption track", { description: j.result.captionNote });
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "YouTube upload failed.";
+      toast.error(msg);
+    } finally {
+      setYtBusy(false);
+    }
+  }, [video, ytBusy, videoEpisodeId]);
 
   // === Wire the <audio> element to the store. ===
   // Whenever the track changes, load the new src.
@@ -364,6 +650,230 @@ export function PhoneDisplay() {
                 </div>
               )}
             </div>
+
+            {/* === JOE'S VIDEO LAYER === */}
+            {video && video.status === "rendering" && !hasVideo && (
+              <div className="absolute bottom-2 left-2 z-20 flex items-center gap-1.5 rounded-full bg-black/70 px-2 py-1 backdrop-blur-sm">
+                <span className="h-1.5 w-1.5 rounded-full bg-red-400 animate-pulse" />
+                <span className="text-[0.55rem] font-semibold uppercase tracking-wider text-white/90">
+                  Filming Joe
+                </span>
+              </div>
+            )}
+
+            {hasVideo && showVideo && video && (
+              <div className="absolute inset-0 z-20 bg-black">
+                {video.mp4Url ? (
+                  <>
+                    <video
+                      ref={videoRef}
+                      src={video.localMp4 || video.mp4Url}
+                      poster={video.posterUrl || undefined}
+                      autoPlay
+                      controls
+                      playsInline
+                      preload="auto"
+                      className="absolute inset-0 h-full w-full object-contain bg-black"
+                      onPlay={() => {
+                        const s = usePlayback.getState();
+                        if (s.isPlaying) s.pause();
+                      }}
+                    />
+                    <div className="absolute right-2 top-2 z-30 flex items-center gap-1.5">
+                      {video.ytUrl ? (
+                        <a
+                          href={video.ytUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={
+                            video.ytCaptions
+                              ? "Published to YouTube with captions"
+                              : video.ytError || "Published to YouTube"
+                          }
+                          className="rounded-full bg-black/70 px-2 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wider text-white/90 backdrop-blur-sm hover:bg-black/85"
+                        >
+                          YouTube ✓
+                        </a>
+                      ) : (
+                        <button
+                          onClick={publishYt}
+                          disabled={ytBusy}
+                          title={video.ytError || "Upload to the connected YouTube channel"}
+                          className="rounded-full bg-black/70 px-2 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wider text-white/90 backdrop-blur-sm hover:bg-black/85 disabled:opacity-60"
+                        >
+                          {ytBusy ? "Publishing…" : "YouTube ↑"}
+                        </button>
+                      )}
+                    </div>
+                  </>
+                ) : tvOpen ? (
+                  <div className="absolute inset-0">
+                    {/* object-contain, not cover: the pack bakes its captions into
+                        the 9:16 frame, and the phone's stage is a shallower box, so
+                        cover crops ~9% off the top and bottom — i.e. the words. */}
+                    {frames.map((src, i) => (
+                      <img
+                        key={`${src}-${i}`}
+                        src={src}
+                        alt="Joe TV frame"
+                        className={`absolute inset-0 h-full w-full object-contain transition-opacity duration-700 ${
+                          i === tvFrame ? "opacity-100" : "opacity-0"
+                        }`}
+                      />
+                    ))}
+                    {frames.length === 0 && (
+                      <div className="absolute inset-0 flex items-center justify-center px-6 text-center">
+                        <p className="text-white/70 text-[0.7rem]">
+                          Joe&apos;s take is still being written.
+                        </p>
+                      </div>
+                    )}
+                    <audio
+                      ref={previewAudioRef}
+                      // Our own copy first: the P&R audio link is an anonymous
+                      // host that expires, and this one is same-origin.
+                      src={tvAudioUrl || undefined}
+                      preload="auto"
+                      onPlaying={() => setTvPlaying(true)}
+                      onPause={() => setTvPlaying(false)}
+                      onEnded={() => {
+                        setTvPlaying(false);
+                        setTvProgress(1);
+                      }}
+                      onError={() =>
+                        setTvError(
+                          tvUsingExpiringAudio
+                            ? "The P&R audio link expired — open the full page."
+                            : "The song audio wouldn't load — open the full page."
+                        )
+                      }
+                      onTimeUpdate={(e) => {
+                        const a = e.currentTarget;
+                        const d = a.duration || 0;
+                        if (!d) return;
+                        setTvProgress(a.currentTime / d);
+                        if (frames.length > 1) {
+                          // Pace the frames by time, not by fraction of the song:
+                          // spreading 4 creatives across 90 seconds left each on
+                          // screen for 22s, which reads as a frozen image.
+                          setTvFrame(
+                            Math.floor(a.currentTime / frameSeconds) % frames.length
+                          );
+                        }
+                      }}
+                    />
+                    {!tvPlaying && frames.length > 0 && (
+                      <button
+                        onClick={toggleTv}
+                        className="absolute inset-0 flex items-center justify-center group"
+                        aria-label="Play Joe's video"
+                      >
+                        <span className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white/60 bg-black/40 backdrop-blur-md transition-transform group-hover:scale-105">
+                          <PlayIcon className="h-6 w-6 text-white ml-0.5" />
+                        </span>
+                      </button>
+                    )}
+                    <div className="absolute inset-x-0 bottom-0 space-y-1.5 bg-gradient-to-t from-black/90 via-black/50 to-transparent p-2.5 pt-8">
+                      <div className="h-0.5 overflow-hidden rounded-full bg-white/25">
+                        <div
+                          className="h-full rounded-full bg-white transition-[width]"
+                          style={{ width: `${Math.min(100, tvProgress * 100)}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={toggleTv}
+                          className="flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-white hover:bg-white/25"
+                          aria-label={tvPlaying ? "Pause Joe TV" : "Play Joe TV"}
+                        >
+                          {tvPlaying ? (
+                            <PauseIcon className="h-3.5 w-3.5" />
+                          ) : (
+                            <PlayIcon className="h-3.5 w-3.5 ml-0.5" />
+                          )}
+                        </button>
+                        <span className="text-[0.55rem] font-semibold uppercase tracking-wider text-white/75">
+                          Joe TV preview
+                        </span>
+                        <button
+                          onClick={renderMp4}
+                          disabled={mp4Busy}
+                          className="ml-auto rounded-full bg-white/15 px-2 py-1 text-[0.53rem] font-semibold uppercase tracking-wider text-white hover:bg-white/25 disabled:opacity-60"
+                        >
+                          {mp4Busy ? "Rendering…" : "MP4"}
+                        </button>
+                      </div>
+                      {tvError && (
+                        <p className="text-[0.55rem] leading-snug text-red-300">
+                          {tvError}{" "}
+                          <a
+                            href={video.pageUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
+                            Full page ↗
+                          </a>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="absolute inset-0">
+                    <img
+                      src={video.posterUrl || frames[0]}
+                      alt={`${track?.episodeTitle ?? "Joe"} video`}
+                      className="absolute inset-0 h-full w-full object-contain"
+                    />
+                    <button
+                      onClick={startTv}
+                      className="absolute inset-0 flex items-center justify-center bg-black/25 group"
+                      aria-label="Play Joe's video in the phone"
+                    >
+                      <span className="flex h-14 w-14 items-center justify-center rounded-full border-2 border-white/60 bg-black/40 backdrop-blur-md transition-transform group-hover:scale-105">
+                        <PlayIcon className="h-6 w-6 text-white ml-0.5" />
+                      </span>
+                    </button>
+                    <a
+                      href={video.pageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="absolute right-2 top-2 z-30 rounded-full bg-black/60 px-2 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wider text-white/85 backdrop-blur-sm hover:bg-black/80"
+                    >
+                      Full page ↗
+                    </a>
+                  </div>
+                )}
+                <div className="pointer-events-none absolute left-2 top-2 flex items-center gap-1 rounded-full bg-black/60 px-2 py-0.5 backdrop-blur-sm">
+                  <span className="text-[0.5rem] font-bold uppercase tracking-[0.18em] text-white/90">
+                    Joe TV
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {hasVideo && (
+              <button
+                onClick={() => {
+                  if (tvOpen) {
+                    previewAudioRef.current?.pause();
+                    setTvOpen(false);
+                    setTvPlaying(false);
+                  }
+                  setDismissedFor((cur) =>
+                    cur === videoEpisodeId ? null : videoEpisodeId
+                  );
+                }}
+                className="absolute bottom-2 right-2 z-30 flex h-7 w-7 items-center justify-center rounded-full bg-black/60 text-white/90 backdrop-blur-sm hover:bg-black/80"
+                aria-label={showVideo ? "Show song view" : "Show Joe's video"}
+              >
+                {showVideo ? (
+                  <span className="text-[0.7rem]">♪</span>
+                ) : (
+                  <PlayIcon className="h-3 w-3 ml-0.5" />
+                )}
+              </button>
+            )}
           </div>
 
           {/* === PROGRESS BAR === */}
@@ -425,6 +935,18 @@ export function PhoneDisplay() {
             </button>
           </div>
 
+          {/* === FREE COURSE CTA === */}
+          {courseUrl && (
+            <a
+              href={courseUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mx-3 mb-1 flex items-center justify-center gap-1 rounded-md bg-white/10 px-2 py-1 text-[0.58rem] font-semibold uppercase tracking-wider text-white/85 hover:bg-white/20 transition-colors"
+            >
+              🎓 Free AI course — start Joe’s bootcamp
+            </a>
+          )}
+
           {/* === HOME INDICATOR === */}
           <div className="flex justify-center pb-2">
             <div className="h-1 w-24 rounded-full bg-white/40" />
@@ -458,7 +980,7 @@ export function PhoneDisplay() {
             </p>
             <p className="text-[0.7rem] text-muted-foreground leading-tight">
               {playEntire
-                ? `Full TTS audio (~${track ? durationToSeconds(track.episodeDuration) : 60}s) — Joe's spoken lyrics`
+                ? `Full song (~${track ? durationToSeconds(track.episodeDuration) : 60}s) — Joe's lyrics`
                 : `Preview mode — first 12 seconds only`}
             </p>
           </div>
