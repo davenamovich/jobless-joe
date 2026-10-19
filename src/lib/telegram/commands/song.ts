@@ -10,6 +10,8 @@ import { tg, safeReply } from "../bot";
 import type { TelegramMessage } from "../types";
 import { updateSession } from "../sessions";
 import { db } from "@/lib/db";
+import { resetStoryBible } from "@/lib/story-bible";
+import { isAdminChat } from "./ralph";
 import { CUSTOM_LABEL, requestLyricSong, requestTopicSong } from "../handlers/message";
 import { chatPrefs, escapeHtml, startSong } from "../song-flow";
 import { ACTIONS, DURATIONS, EPISODES, INTENSITIES, type ActionKey } from "@/lib/joe-prompts";
@@ -61,6 +63,24 @@ export async function handleEpisode(args: string[], msg: TelegramMessage) {
     action: "generate",
     intro: `✍️ Joe is writing <b>${escapeHtml(episode.label)}</b>`,
   });
+}
+
+/**
+ * /resetstory — start Joe's shared story over from Season 1, episode 1.
+ * The story is shared by every chat, so only chats listed in
+ * TELEGRAM_ADMIN_CHAT_IDS (comma-separated) may reset it.
+ */
+export async function handleResetStory(_args: string[], msg: TelegramMessage) {
+  if (!isAdminChat(msg.chat.id)) {
+    await say(msg.chat.id, `Only the show's producer can restart Joe's story.`, "send reset refused");
+    return;
+  }
+  await resetStoryBible();
+  await say(
+    msg.chat.id,
+    `🎬 Story reset. /next plays episode 1 of the arc (see /arc).`,
+    "send reset done",
+  );
 }
 
 /** /next — the next chapter of the running story. */

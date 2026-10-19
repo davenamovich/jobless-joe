@@ -22,6 +22,8 @@ import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
 import { SettingsDialog } from "@/components/joe/SettingsDialog";
 import { SongPanel } from "@/components/joe/SongPanel";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
+import { WritersRoomDialog } from "@/components/joe/WritersRoomDialog";
+import { JoeChatDialog } from "@/components/joe/JoeChatDialog";
 import { WallManager } from "@/components/joe/WallManager";
 import type { LyricFit } from "@/lib/lyric-budget";
 import {
@@ -60,7 +62,7 @@ interface ApiResponse {
 
 export default function Home() {
   // === Form state ===
-  const [episodeKey, setEpisodeKey] = useState<string>("joe-discovers-ai");
+  const [episodeKey, setEpisodeKey] = useState<string>("unemployed-intro");
   const [customTopic, setCustomTopic] = useState<string>("");
   // A seed Joe has to follow: he keeps its beats and facts, rewrites the lines.
   const [customScript, setCustomScript] = useState<string>("");
@@ -99,6 +101,23 @@ export default function Home() {
   // Set only when the editor pass shortened the lyric to fit its time.
   const [lyricTightened, setLyricTightened] = useState(false);
   const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
+  const [resettingStory, setResettingStory] = useState(false);
+
+  // Start Joe's story over from Season 1, episode 1. Songs are kept.
+  const resetStory = useCallback(async () => {
+    setResettingStory(true);
+    try {
+      const res = await fetch("/api/story-bible", { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.storyBible) throw new Error(j.error || "Could not reset the story.");
+      setStoryBible(j.storyBible);
+      toast.success("Story reset. Next up: Season 1, episode 1.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not reset the story.");
+    } finally {
+      setResettingStory(false);
+    }
+  }, []);
   const [episodes, setEpisodes] = useState<EpisodeListItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingLabel, setLoadingLabel] = useState<string>("Joe is warming up…");
@@ -313,10 +332,18 @@ export default function Home() {
   }, []);
 
   // === Generate / refine ===
+  const selectedKey = episodeKey;
+  const topicInput = customTopic;
   const handleAction = useCallback(
-    async (action: ActionKey) => {
+    async (
+      action: ActionKey,
+      // "Make it a song" from Chat with Joe sings a topic before the controls catch up.
+      override?: { customTopic: string }
+    ) => {
+      const episodeKey = override ? "custom" : selectedKey;
+      const customTopic = override?.customTopic ?? topicInput;
       const isCustom = episodeKey === "custom";
-      const script = customScript.trim();
+      const script = override ? "" : customScript.trim();
       // A script supplies the content itself, so it stands in for the topic.
       if (isCustom && !customTopic.trim() && script.length < MIN_SCRIPT_CHARS) {
         toast.error("Type a custom topic or paste a script before generating.");
@@ -389,8 +416,8 @@ export default function Home() {
       }
     },
     [
-      episodeKey,
-      customTopic,
+      selectedKey,
+      topicInput,
       customScript,
       duration,
       intensity,
@@ -399,6 +426,17 @@ export default function Home() {
       language,
       selectedEpisodeId,
     ]
+  );
+
+  // Chat with Joe → song: show the topic in the controls and sing it now.
+  const makeSongFromChat = useCallback(
+    (topic: string) => {
+      setEpisodeKey("custom");
+      setCustomTopic(topic);
+      setCustomScript("");
+      void handleAction("generate", { customTopic: topic });
+    },
+    [handleAction]
   );
 
   // === Pick a historical episode to view ===
@@ -453,7 +491,8 @@ export default function Home() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)_360px] gap-6">
           {/* Left column: Controls */}
-          <aside className="lg:sticky lg:top-20 self-start">
+          <aside className="lg:sticky lg:top-20 self-start space-y-3">
+            <JoeChatDialog onMakeSong={makeSongFromChat} disabled={isLoading} />
             <ControlPanel
               episodeKey={episodeKey}
               setEpisodeKey={setEpisodeKey}
@@ -526,13 +565,15 @@ export default function Home() {
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <BookOpen className="h-4 w-4 text-primary" />
                   <h2 className="font-serif text-lg">Story Bible</h2>
-                  {storyBible && (
-                    <span className="text-xs text-muted-foreground ml-auto">
-                      Episode {storyBible.episodeCount}
-                    </span>
-                  )}
+                  <span className="ml-auto">
+                    <WritersRoomDialog onStoryChanged={setStoryBible} />
+                  </span>
                 </div>
-                <StoryBibleCard storyBible={storyBible} />
+                <StoryBibleCard
+                  storyBible={storyBible}
+                  onReset={resetStory}
+                  resetting={resettingStory}
+                />
               </div>
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">
