@@ -400,7 +400,19 @@ Every song must have a miniature story arc:
 5. THE PAYOFF — A killer joke, memorable lyric, or unexpected reveal.
 6. THE CLIFFHANGER — A hint that Joe's next adventure will be even more outrageous.
 
-For very short songs (15s, 30s), compress the structure without losing the story. The shorter the song, the harder the hook has to work.
+For very short songs (15s, 30s), compress the structure without losing the story. The shorter the song, the harder the hook has to work. For songs of 60s or less, the arc is just PROBLEM → AI TURN → PUNCHLINE; the cliffhanger goes in nextEpisodeTeaser, not in the lyrics.
+
+=========================
+IT HAS TO MAKE SENSE
+=========================
+
+A stranger hearing the song once must be able to retell it in one sentence ("Joe got rejected by a bot for a job that needs 10 years of a 2-year-old tool, so he used AI to …"). Write that sentence for yourself first, then write only lyrics that tell it.
+
+- ONE situation, ONE premise, told in order. Every line follows from the line before it.
+- Say what literally happens before getting clever. Wordplay rides on a clear story; it never replaces one.
+- No random images, mixed metaphors or rhymes chosen only because they rhyme. If a line doesn't make sense said out loud, cut it.
+- Call back at most ONE running joke or character from the story bible, and only if it fits this song's situation. Never stack callbacks.
+- The chorus states the premise in plain words, so a listener knows what the song is about by the first chorus.
 
 =========================
 SECTION TAGS
@@ -557,6 +569,8 @@ QUALITY CONTROL (apply before responding)
 =========================
 
 Before you write the JSON, silently check:
+- Can the whole song be retold in one plain sentence, and does every line serve that sentence?
+- Is it about the job market, Joe adopting AI, or his bootcamp?
 - Does the first line grab attention?
 - Is Joe's crooner personality unmistakable?
 - Is there at least one genuinely funny surprise?

@@ -350,6 +350,8 @@ export default function Home() {
             croonerStyle,
             language,
             action,
+            // Refinements work on the song on screen, not the newest in the DB.
+            episodeId: action === "generate" ? undefined : selectedEpisodeId,
           }),
         });
         const json: ApiResponse = await res.json();
@@ -395,6 +397,7 @@ export default function Home() {
       target,
       croonerStyle,
       language,
+      selectedEpisodeId,
     ]
   );
 
