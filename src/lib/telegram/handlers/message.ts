@@ -1,11 +1,12 @@
 // /src/lib/telegram/handlers/message.ts — Route non-command messages.
-// Plain text is the song's subject: a short message is a topic, and a pasted
-// multi-line lyric is used as the script Joe sings from.
+// Plain text is a chat with Joe (commands/chat.ts); every reply offers a
+// "Make it a song" button. A pasted multi-line lyric is still sung as-is.
 
 import { tg, safeReply, showMainMenu } from "../bot";
 import type { TelegramMessage } from "../types";
 import { getSession } from "../sessions";
 import { escapeHtml, startSong } from "../song-flow";
+import { chatWithJoe } from "../commands/chat";
 import { MAX_SCRIPT_CHARS, MIN_SCRIPT_CHARS } from "@/lib/joe-prompts";
 
 /** Same label the web UI sends, so the bot never names itself in the prompt. */
@@ -40,7 +41,7 @@ export async function handleNonCommandMessage(msg: TelegramMessage): Promise<voi
     await requestLyricSong(msg, text);
     return;
   }
-  await requestTopicSong(msg, text);
+  await chatWithJoe(msg, text);
 }
 
 /** A song about a topic or a bit of context. Shared by plain text and /song. */
