@@ -25,6 +25,16 @@ export interface StickmanVideoData {
   durationSec: number;
 }
 
+/** A published here.now page (https, *.here.now) — the only pages we pay to film. */
+export function isHereNowPage(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.protocol === "https:" && (u.hostname === "here.now" || u.hostname.endsWith(".here.now"));
+  } catch {
+    return false;
+  }
+}
+
 /** How long the end card holds after the song. */
 export const END_CARD_MS = 2500;
 

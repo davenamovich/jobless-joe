@@ -6,10 +6,9 @@
 
 import { tg, safeReply, tryAcquireRateLimit } from "../bot";
 import type { TelegramMessage } from "../types";
-import { db } from "@/lib/db";
 import { escapeHtml } from "../song-flow";
 import { renderMemePng, writeMemes, type MemeSource } from "@/lib/joe-memes";
-import type { SongOutput } from "@/lib/joe-prompts";
+import { songMemeSource } from "@/lib/meme-source";
 
 const DEFAULT_COUNT = 3;
 const MAX_COUNT = 5;
@@ -31,25 +30,6 @@ export function parseMemeArgs(args: string[]): { count: number; topic: string } 
   };
 }
 
-/** The most recent song, as a meme source. Null when there's no song yet. */
-async function lastSongSource(): Promise<MemeSource | null> {
-  const last = await db.episode.findFirst({ orderBy: { createdAt: "desc" } });
-  if (!last) return null;
-  let out: Partial<SongOutput> = {};
-  try {
-    out = JSON.parse(last.output) as SongOutput;
-  } catch {
-    // Title alone still makes memes.
-  }
-  return {
-    title: out.episodeTitle || last.title,
-    topic: last.customTopic ?? undefined,
-    lyrics: out.lyrics,
-    hooks: Array.isArray(out.hooks) ? out.hooks : undefined,
-    closingLine: out.closingLine,
-  };
-}
-
 export async function handleMeme(args: string[], msg: TelegramMessage) {
   const chatId = msg.chat.id;
   if (busyChats.has(chatId)) {
@@ -62,7 +42,7 @@ export async function handleMeme(args: string[], msg: TelegramMessage) {
   }
 
   const { count, topic } = parseMemeArgs(args);
-  const source: MemeSource | null = topic ? { topic } : await lastSongSource();
+  const source: MemeSource | null = topic ? { topic } : await songMemeSource();
   if (!source) {
     await say(chatId, `No song yet — make one with /song, or send <code>/meme your topic</code>.`, "send meme no song");
     return;
