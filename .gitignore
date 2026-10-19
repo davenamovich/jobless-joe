@@ -48,6 +48,9 @@ dev.log
 dev.out.log
 test
 prompt
+# the generic "test" rule above must not hide this API route
+!src/app/api/backend/test/
+!src/app/api/backend/test/route.ts
 
 server.log
 # Skills directory
@@ -57,4 +60,6 @@ server.log
 /models/*
 !/models/README.txt
 /public/audio/*
+# mirrored MP4 renders (P&R hosts them ~24h; we keep our own copy locally)
+/public/video/*
 

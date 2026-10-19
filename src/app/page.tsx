@@ -20,11 +20,15 @@ import { MicLoader } from "@/components/joe/MicLoader";
 import { OutputDisplay } from "@/components/joe/OutputDisplay";
 import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
 import { SettingsDialog } from "@/components/joe/SettingsDialog";
+import { SongPanel } from "@/components/joe/SongPanel";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
 import { WallManager } from "@/components/joe/WallManager";
+import type { LyricFit } from "@/lib/lyric-budget";
 import {
   EPISODES,
   INTENSITIES,
+  MAX_SCRIPT_CHARS,
+  MIN_SCRIPT_CHARS,
   type ActionKey,
   type DurationKey,
   type IntensityKey,
@@ -32,6 +36,7 @@ import {
   type StoryBible,
 } from "@/lib/joe-prompts";
 import { CROONER_STYLES, getCroonerStyle } from "@/lib/crooner-styles";
+import { getLanguage } from "@/lib/languages";
 import type {
   WallSummary,
   WallWithItems,
@@ -44,16 +49,26 @@ interface ApiResponse {
   output?: SongOutput;
   storyBible?: StoryBible;
   raw?: string;
+  /** The episode that was just created, echoed back by the generate route. */
+  episodeId?: string;
+  /**
+   * How the lyric sat in the song's running time, from the generate route —
+   * plus whether the editor pass had to rewrite it to land.
+   */
+  lyricFit?: LyricFit & { tightened?: boolean };
 }
 
 export default function Home() {
   // === Form state ===
   const [episodeKey, setEpisodeKey] = useState<string>("joe-discovers-ai");
   const [customTopic, setCustomTopic] = useState<string>("");
+  // A seed Joe has to follow: he keeps its beats and facts, rewrites the lines.
+  const [customScript, setCustomScript] = useState<string>("");
   const [duration, setDuration] = useState<DurationKey>("60s");
   const [intensity, setIntensity] = useState<IntensityKey>("ridiculous");
   const [target, setTarget] = useState<string>("ai-curious");
   const [croonerStyle, setCroonerStyle] = useState<string>("smoky-lounge");
+  const [language, setLanguage] = useState<string>("en");
 
   // === Backend status (shown in header) ===
   const [backendInfo, setBackendInfo] = useState<{
@@ -81,6 +96,8 @@ export default function Home() {
 
   // === Output state ===
   const [output, setOutput] = useState<SongOutput | null>(null);
+  // Set only when the editor pass shortened the lyric to fit its time.
+  const [lyricTightened, setLyricTightened] = useState(false);
   const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
   const [episodes, setEpisodes] = useState<EpisodeListItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -299,8 +316,16 @@ export default function Home() {
   const handleAction = useCallback(
     async (action: ActionKey) => {
       const isCustom = episodeKey === "custom";
-      if (isCustom && !customTopic.trim()) {
-        toast.error("Type a custom topic before generating.");
+      const script = customScript.trim();
+      // A script supplies the content itself, so it stands in for the topic.
+      if (isCustom && !customTopic.trim() && script.length < MIN_SCRIPT_CHARS) {
+        toast.error("Type a custom topic or paste a script before generating.");
+        return;
+      }
+      if (script.length > MAX_SCRIPT_CHARS) {
+        toast.error(
+          `That script is ${script.length} characters — trim it to ${MAX_SCRIPT_CHARS}.`
+        );
         return;
       }
       const episodeLabel =
@@ -318,10 +343,12 @@ export default function Home() {
             episodeKey,
             episodeLabel,
             customTopic: isCustom ? customTopic.trim() : undefined,
+            customScript: script || undefined,
             duration,
             intensity,
             target,
             croonerStyle,
+            language,
             action,
           }),
         });
@@ -336,6 +363,12 @@ export default function Home() {
         setOutput(json.output);
         if (json.episodeId) setSelectedEpisodeId(json.episodeId);
         if (json.storyBible) setStoryBible(json.storyBible);
+        setLyricTightened(Boolean(json.lyricFit?.tightened));
+        if (json.lyricFit?.tightened) {
+          toast.message(
+            `Tightened to fit ${json.lyricFit.seconds}s — ${json.lyricFit.words} sung words, ending on the punchline.`
+          );
+        }
         toast.success(episodeSuccessToast(action));
         // Refresh episode list in the background
         fetch("/api/episodes", { cache: "no-store" })
@@ -353,7 +386,16 @@ export default function Home() {
         setIsLoading(false);
       }
     },
-    [episodeKey, customTopic, duration, intensity, target, croonerStyle]
+    [
+      episodeKey,
+      customTopic,
+      customScript,
+      duration,
+      intensity,
+      target,
+      croonerStyle,
+      language,
+    ]
   );
 
   // === Pick a historical episode to view ===
@@ -364,6 +406,13 @@ export default function Home() {
       if (!res.ok) return;
       const json = await res.json();
       if (json.output) setOutput(json.output);
+      // A song already in the archive may have been tightened long ago; that
+      // note belongs to the generation, not to browsing.
+      setLyricTightened(false);
+      // Refining a saved episode should keep the language it was written in…
+      if (json.episode?.language) setLanguage(json.episode.language);
+      // …and the script it was built from, so a refinement stays on-script.
+      if (json.episode) setCustomScript(json.episode.customScript ?? "");
     } catch (e) {
       console.error("Load episode failed", e);
     }
@@ -393,6 +442,9 @@ export default function Home() {
             targetLabel={target}
             croonerStyleLabel={getCroonerStyle(croonerStyle).label}
             croonerStyleEmoji={getCroonerStyle(croonerStyle).emoji}
+            languageLabel={getLanguage(language).nativeLabel}
+            languageFlag={getLanguage(language).flag}
+            hasScript={customScript.trim().length >= MIN_SCRIPT_CHARS}
           />
         </div>
 
@@ -404,6 +456,8 @@ export default function Home() {
               setEpisodeKey={setEpisodeKey}
               customTopic={customTopic}
               setCustomTopic={setCustomTopic}
+              customScript={customScript}
+              setCustomScript={setCustomScript}
               duration={duration}
               setDuration={setDuration}
               intensity={intensity}
@@ -412,6 +466,8 @@ export default function Home() {
               setTarget={setTarget}
               croonerStyle={croonerStyle}
               setCroonerStyle={setCroonerStyle}
+              language={language}
+              setLanguage={setLanguage}
               onAction={handleAction}
               isLoading={isLoading}
               hasEpisode={!!output}
@@ -434,14 +490,31 @@ export default function Home() {
             {!isLoading && !output && !activeError && <EmptyState />}
 
             {!isLoading && output && (
-              <OutputDisplay
-                output={output}
-                episodeId={selectedEpisodeId}
-                walls={walls}
-                activeWallId={activeWallId}
-                onSetActiveWall={setActiveWallId}
-                onSendToWall={handleSendToWall}
-              />
+              <>
+                {selectedEpisodeId && (
+                  <SongPanel
+                    key={selectedEpisodeId}
+                    episodeId={selectedEpisodeId}
+                    title={output.episodeTitle}
+                  />
+                )}
+            <OutputDisplay
+              output={output}
+              durationKey={
+                // The episode's own length, then the song's own label, then the
+                // control — so the fit note never reports the wrong running time.
+                episodes.find((e) => e.id === selectedEpisodeId)?.duration ??
+                output.duration ??
+                duration
+              }
+              tightened={lyricTightened}
+                  episodeId={selectedEpisodeId}
+                  walls={walls}
+                  activeWallId={activeWallId}
+                  onSetActiveWall={setActiveWallId}
+                  onSendToWall={handleSendToWall}
+                />
+              </>
             )}
 
             {/* Lower row: Story Bible + Episode Archive */}
@@ -482,7 +555,7 @@ export default function Home() {
                   Music Video Mode
                 </span>
               </div>
-              <PhoneDisplay />
+              <PhoneDisplay episodeId={selectedEpisodeId} />
             </div>
             <WallManager
               walls={walls}

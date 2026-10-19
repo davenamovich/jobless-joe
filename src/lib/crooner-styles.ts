@@ -99,6 +99,49 @@ export const CROONER_STYLES: CroonerStyle[] = [
   },
 ];
 
+/**
+ * ACE 1.5 — CROONER STYLE PROMPT
+ *
+ * The fixed voice + arrangement brief for every ACE-Step render. It is the
+ * same line-for-line on every episode, so Joe is unmistakably the same singer
+ * from song to song; only the short episode detail appended by
+ * buildAceCaption() changes.
+ *
+ * Edit with care — this is Joe's actual voice, not a suggestion.
+ */
+export const ACE_CROONER_STYLE_PROMPT =
+  "Classic vintage crooner vocals, smooth and confident male baritone, old-school lounge singer charm, Sinatra-inspired phrasing, rich warm tone, playful comedic delivery, dramatic pauses, subtle swing, jazzy piano, upright bass, brushed drums, muted trumpet, and lush orchestral strings. Timeless 1950s nightclub atmosphere with modern, witty storytelling. Clear vocals front and center, expressive phrasing, memorable melodic hooks, and a charismatic storyteller vibe. Build the emotion and humor as the story unfolds, ending with a strong, catchy punchline.";
+
+/** ACE-Step caption budget (characters). */
+const ACE_CAPTION_LIMIT = 2000;
+/** How much of the episode's musical direction we append after the fixed voice. */
+const EPISODE_DETAILS_MAX = 400;
+
+/**
+ * Build the ACE-Step caption: the fixed Joe voice prompt, then a short
+ * "this episode" clause for tempo / instrumentation.
+ *
+ * The fixed prompt always comes first and is never truncated, so a verbose
+ * episode direction can't dilute or overwrite Joe's voice.
+ */
+export function buildAceCaption(output: {
+  musicalDirection?: string;
+  performanceNotes?: string;
+}): string {
+  const details = [output.musicalDirection, output.performanceNotes]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, EPISODE_DETAILS_MAX);
+
+  if (!details) return ACE_CROONER_STYLE_PROMPT;
+  return `${ACE_CROONER_STYLE_PROMPT} This episode: ${details}`.slice(
+    0,
+    ACE_CAPTION_LIMIT
+  );
+}
+
 export function getCroonerStyle(key: string | undefined | null): CroonerStyle {
   if (!key) return CROONER_STYLES[0];
   return CROONER_STYLES.find((s) => s.key === key) ?? CROONER_STYLES[0];

@@ -39,6 +39,10 @@ model Episode {
   episodeLabel  String
   /// If user typed a custom topic, it lives here
   customTopic   String?
+  /// Optional per-episode script the song was built from. Joe keeps its beats
+  /// and facts but rewrites them into his own voice, so this is an input we
+  /// keep forever (unlike the lyrics, which live in `output`).
+  customScript  String?
 
   /// Selected song duration: 15s / 30s / 60s / 90s / 120s
   duration      String
@@ -48,6 +52,8 @@ model Episode {
   target        String
   /// Crooner style key (e.g. "smoky-lounge", "big-band-vegas")
   croonerStyle  String   @default("smoky-lounge")
+  /// Output language key from LANGUAGES (e.g. "en", "es", "pt-BR")
+  language      String   @default("en")
 
   /// Which AI backend produced this episode: "zai" | "openai-compat"
   backend       String   @default("zai")
@@ -167,6 +173,87 @@ model BackendConfig {
 
   /// Default TTS voice for audio generation
   defaultVoice    String   @default("jam")
+
+  /// Which engine renders the song audio: "zai" (spoken TTS) | "acestep" (ACE-Step music)
+  audioEngine     String   @default("zai")
+
+  /// ACE-Step API base, e.g. "http://localhost:8001" or "https://abc123.ngrok.app".
+  /// A trailing /v1 is accepted and normalized away.
+  aceStepBaseUrl  String   @default("http://localhost:8001")
+  /// ACE-Step model ID as listed by GET /v1/models
+  aceStepModel    String   @default("acestep/acestep-v15-turbo")
+
+  /// Plunder & Riffle MCP endpoint (video engine)
+  prMcpUrl        String   @default("https://bot.plunderandriffle.com/api/mcp")
+  /// Agent API key for Plunder & Riffle (Authorization: Bearer ...)
+  prApiKey        String   @default("")
+  /// Referral code appended to P&R links (?ref=...) so Joe's traffic is tracked
+  prRef           String   @default("")
+  /// Public https base that serves /audio/* so P&R can fetch the song.
+  /// Empty = publish the MP3 to here.now for each video.
+  publicBaseUrl   String   @default("")
+  /// Free-course CTA used on the phone, the song page and the video copy
+  courseUrl       String   @default("https://www.plunderandriffle.com/joblessjoe")
+
+  /// Google Cloud OAuth client used to upload finished videos to YouTube.
+  /// P&R has no YouTube tool, so this is the only route to a real YT upload.
+  ytClientId      String   @default("")
+  ytClientSecret  String   @default("")
+  /// Long-lived refresh token from the consent flow (offline access)
+  ytRefreshToken  String   @default("")
+  /// Channel resolved from the token, shown in settings as proof it works
+  ytChannelId     String   @default("")
+  ytChannelTitle  String   @default("")
+  /// unlisted | public | private — default to the safe one
+  ytPrivacy       String   @default("unlisted")
+}
+
+/// A Plunder & Riffle video made from an episode's song.
+/// One click starts a job; the row tracks the pack page, its 9:16 assets and
+/// the optional MP4 render.
+model VideoJob {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  episodeId   String
+
+  /// queued | rendering | ready | mp4_rendering | done | failed
+  status      String   @default("queued")
+
+  /// Public https URL of the song handed to P&R
+  audioUrl    String   @default("")
+  /// The 9:16 /video page P&R returns
+  pageUrl     String   @default("")
+  /// 9:16 poster/asset used on the phone
+  posterUrl   String   @default("")
+  /// Finished MP4, when requested
+  mp4Url      String   @default("")
+
+  /// Joe-specific caption (hook + closing line + free-course CTA)
+  postCopy    String   @default("")
+
+  /// P&R job ids for resuming polls (never resend the audio)
+  packJobId   String   @default("")
+  mp4JobId    String   @default("")
+
+  /// Raw provider payload, kept for debugging odd shapes
+  providerRaw String   @default("")
+  error       String   @default("")
+
+  /// Copy of the MP4 on our own disk (/video/<id>.mp4). P&R hosts the render
+  /// for ~24h only, so the YouTube upload and the phone read this instead.
+  localMp4    String   @default("")
+
+  /// YouTube upload: "" | publishing | published | failed
+  ytStatus    String   @default("")
+  ytVideoId   String   @default("")
+  ytUrl       String   @default("")
+  /// True when a caption track (SRT built from the pack page) was uploaded
+  ytCaptions  Boolean  @default(false)
+  ytError     String   @default("")
+
+  @@index([episodeId, createdAt])
 }
 
 /// A generated audio track for an episode — spoken lyrics that play
