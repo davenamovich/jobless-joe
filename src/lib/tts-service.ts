@@ -167,16 +167,20 @@ async function runEnsureAudioTrack(
     const filename = `ep_${episodeId}_${voice}.${rendered.format}`;
     await fs.writeFile(path.join(AUDIO_DIR, filename), rendered.buffer);
     const filePath = `${PUBLIC_PREFIX}/${filename}`;
-    const track = await db.audioTrack.create({
-      data: {
-        episodeId,
-        voice: voiceDef.key,
-        format: rendered.format,
-        speed: 1,
-        durationSec: Math.round(rendered.durationSec),
-        chunkCount: 1,
-        filePath,
-      },
+    // Another worker may have finished the same render first (inFlight only
+    // dedupes inside one process), so write the row idempotently instead of
+    // failing the whole song on the (episodeId, voice) unique constraint.
+    const data = {
+      format: rendered.format,
+      speed: 1,
+      durationSec: Math.round(rendered.durationSec),
+      chunkCount: 1,
+      filePath,
+    };
+    const track = await db.audioTrack.upsert({
+      where: { episodeId_voice: { episodeId, voice: voiceDef.key } },
+      create: { episodeId, voice: voiceDef.key, ...data },
+      update: data,
     });
     return {
       ok: true,
@@ -254,17 +258,19 @@ async function runEnsureAudioTrack(
   await fs.writeFile(fullPath, combined);
   const publicPath = `${PUBLIC_PREFIX}/${filename}`;
 
-  // 6. Persist AudioTrack row.
-  const track = await db.audioTrack.create({
-    data: {
-      episodeId,
-      voice: voiceDef.key,
-      format: "wav",
-      speed: voiceDef.speed,
-      durationSec: Math.round(totalDurationSec),
-      chunkCount: buffers.length,
-      filePath: publicPath,
-    },
+  // 6. Persist AudioTrack row. Upsert: a parallel render in another worker
+  // can win this race, and that is not a failure — the audio is the same.
+  const audioData = {
+    format: "wav",
+    speed: voiceDef.speed,
+    durationSec: Math.round(totalDurationSec),
+    chunkCount: buffers.length,
+    filePath: publicPath,
+  };
+  const track = await db.audioTrack.upsert({
+    where: { episodeId_voice: { episodeId, voice: voiceDef.key } },
+    create: { episodeId, voice: voiceDef.key, ...audioData },
+    update: audioData,
   });
 
   return {

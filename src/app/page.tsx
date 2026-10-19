@@ -19,6 +19,7 @@ import { EpisodeHistory, type EpisodeListItem } from "@/components/joe/EpisodeHi
 import { MicLoader } from "@/components/joe/MicLoader";
 import { OutputDisplay } from "@/components/joe/OutputDisplay";
 import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
+import { TrendingIdeas } from "@/components/joe/TrendingIdeas";
 import { SettingsDialog } from "@/components/joe/SettingsDialog";
 import { SongPanel } from "@/components/joe/SongPanel";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
@@ -332,20 +333,16 @@ export default function Home() {
   }, []);
 
   // === Generate / refine ===
-  const selectedKey = episodeKey;
-  const topicInput = customTopic;
   const handleAction = useCallback(
-    async (
-      action: ActionKey,
-      // "Make it a song" from Chat with Joe sings a topic before the controls catch up.
-      override?: { customTopic: string }
-    ) => {
-      const episodeKey = override ? "custom" : selectedKey;
-      const customTopic = override?.customTopic ?? topicInput;
-      const isCustom = episodeKey === "custom";
-      const script = override ? "" : customScript.trim();
+    async (action: ActionKey, topicOverride?: string) => {
+      // A one-click trending idea, or "Make it a song" from Chat with Joe, sings
+      // that topic whatever the panel says.
+      const epKey = topicOverride ? "custom" : episodeKey;
+      const topic = topicOverride ?? customTopic;
+      const isCustom = epKey === "custom";
+      const script = topicOverride ? "" : customScript.trim();
       // A script supplies the content itself, so it stands in for the topic.
-      if (isCustom && !customTopic.trim() && script.length < MIN_SCRIPT_CHARS) {
+      if (isCustom && !topic.trim() && script.length < MIN_SCRIPT_CHARS) {
         toast.error("Type a custom topic or paste a script before generating.");
         return;
       }
@@ -356,7 +353,11 @@ export default function Home() {
         return;
       }
       const episodeLabel =
-        isCustom ? "Custom Topic" : (labelForEpisode(episodeKey) ?? "Episode");
+        topicOverride
+          ? "Trending"
+          : isCustom
+            ? "Custom Topic"
+            : (labelForEpisode(epKey) ?? "Episode");
 
       setIsLoading(true);
       setActiveError(null);
@@ -367,9 +368,9 @@ export default function Home() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            episodeKey,
+            episodeKey: epKey,
             episodeLabel,
-            customTopic: isCustom ? customTopic.trim() : undefined,
+            customTopic: isCustom ? topic.trim() : undefined,
             customScript: script || undefined,
             duration,
             intensity,
@@ -416,8 +417,8 @@ export default function Home() {
       }
     },
     [
-      selectedKey,
-      topicInput,
+      episodeKey,
+      customTopic,
       customScript,
       duration,
       intensity,
@@ -434,7 +435,7 @@ export default function Home() {
       setEpisodeKey("custom");
       setCustomTopic(topic);
       setCustomScript("");
-      void handleAction("generate", { customTopic: topic });
+      void handleAction("generate", topic);
     },
     [handleAction]
   );
@@ -513,6 +514,16 @@ export default function Home() {
               onAction={handleAction}
               isLoading={isLoading}
               hasEpisode={!!output}
+            />
+            <TrendingIdeas
+              className="mt-4"
+              disabled={isLoading}
+              onPick={(idea) => {
+                // Leave the panel showing what was sung, so a remix has context.
+                setEpisodeKey("custom");
+                setCustomTopic(idea.topic);
+                handleAction("generate", idea.topic);
+              }}
             />
           </aside>
 

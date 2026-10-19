@@ -206,6 +206,23 @@ model BackendConfig {
   ytChannelTitle  String   @default("")
   /// unlisted | public | private — default to the safe one
   ytPrivacy       String   @default("unlisted")
+
+  /// Upload-Post (upload-post.com) — one API call posts a video to TikTok,
+  /// Instagram, YouTube Shorts, X, etc. on the connected profile.
+  upApiKey        String   @default("")
+  /// Upload-Post profile ("user") the social accounts are connected to
+  upUser          String   @default("")
+  /// Comma-separated platform[] values, e.g. "tiktok,instagram,youtube"
+  upPlatforms     String   @default("tiktok,instagram,youtube")
+
+  /// Autopilot: write + sing a new song on a timer, film it, optionally post it
+  autoEnabled     Boolean  @default(false)
+  autoIntervalMin Int      @default(60)
+  /// Also film the MP4 (P&R credits) and post it via Upload-Post
+  autoPublish     Boolean  @default(false)
+  /// Telegram chat that hears about each autopilot run (set by /autopilot on)
+  autoChatId      String   @default("")
+  autoLastRunAt   DateTime?
 }
 
 /// A Plunder & Riffle video made from an episode's song.

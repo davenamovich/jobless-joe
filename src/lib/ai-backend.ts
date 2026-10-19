@@ -55,7 +55,25 @@ export interface BackendConfig {
   ytChannelTitle: string;
   /** unlisted | public | private */
   ytPrivacy: string;
+
+  /** Upload-Post API key (Authorization: Apikey ...) */
+  upApiKey: string;
+  /** Upload-Post profile the social accounts are connected to */
+  upUser: string;
+  /** Comma-separated platform[] values */
+  upPlatforms: string;
+
+  /** Autopilot: a new song every autoIntervalMin minutes */
+  autoEnabled: boolean;
+  autoIntervalMin: number;
+  /** Film the MP4 and post it via Upload-Post after each autopilot song */
+  autoPublish: boolean;
+  /** Telegram chat that hears about autopilot runs */
+  autoChatId: string;
 }
+
+export const UP_DEFAULT_PLATFORMS = "tiktok,instagram,youtube";
+export const AUTO_DEFAULT_INTERVAL_MIN = 60;
 
 export const ACE_STEP_DEFAULT_URL = "http://localhost:8001";
 export const ACE_STEP_DEFAULT_MODEL = "acestep/acestep-v15-turbo";
@@ -89,7 +107,30 @@ const DEFAULT_CONFIG: BackendConfig = {
   ytChannelId: "",
   ytChannelTitle: "",
   ytPrivacy: "unlisted",
+  upApiKey: "",
+  upUser: "",
+  upPlatforms: UP_DEFAULT_PLATFORMS,
+  autoEnabled: false,
+  autoIntervalMin: AUTO_DEFAULT_INTERVAL_MIN,
+  autoPublish: false,
+  autoChatId: "",
 };
+
+/** Upload-Post + autopilot fields from env (headless deployments). */
+function envPublishing(): Pick<
+  BackendConfig,
+  "upApiKey" | "upUser" | "upPlatforms" | "autoEnabled" | "autoIntervalMin" | "autoPublish" | "autoChatId"
+> {
+  return {
+    upApiKey: process.env.UPLOAD_POST_API_KEY ?? "",
+    upUser: process.env.UPLOAD_POST_USER ?? "",
+    upPlatforms: process.env.UPLOAD_POST_PLATFORMS ?? UP_DEFAULT_PLATFORMS,
+    autoEnabled: process.env.AUTOPILOT === "1" || process.env.AUTOPILOT === "true",
+    autoIntervalMin: Number(process.env.AUTOPILOT_INTERVAL_MIN) || AUTO_DEFAULT_INTERVAL_MIN,
+    autoPublish: process.env.AUTOPILOT_PUBLISH === "1" || process.env.AUTOPILOT_PUBLISH === "true",
+    autoChatId: process.env.AUTOPILOT_CHAT_ID ?? "",
+  };
+}
 
 /** Read the current backend config from DB, falling back to env vars. */
 export async function loadBackendConfig(): Promise<BackendConfig> {
@@ -123,6 +164,7 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
       ytChannelId: "",
       ytChannelTitle: "",
       ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
+      ...envPublishing(),
     };
   }
 
@@ -149,6 +191,13 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
       ytChannelId: row.ytChannelId || "",
       ytChannelTitle: row.ytChannelTitle || "",
       ytPrivacy: row.ytPrivacy || "unlisted",
+      upApiKey: row.upApiKey || process.env.UPLOAD_POST_API_KEY || "",
+      upUser: row.upUser || process.env.UPLOAD_POST_USER || "",
+      upPlatforms: row.upPlatforms || UP_DEFAULT_PLATFORMS,
+      autoEnabled: !!row.autoEnabled,
+      autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
+      autoPublish: !!row.autoPublish,
+      autoChatId: row.autoChatId || "",
     };
   } catch {
     return DEFAULT_CONFIG;
@@ -179,6 +228,13 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       ytChannelId: cfg.ytChannelId,
       ytChannelTitle: cfg.ytChannelTitle,
       ytPrivacy: cfg.ytPrivacy,
+      upApiKey: cfg.upApiKey,
+      upUser: cfg.upUser,
+      upPlatforms: cfg.upPlatforms,
+      autoEnabled: cfg.autoEnabled,
+      autoIntervalMin: cfg.autoIntervalMin,
+      autoPublish: cfg.autoPublish,
+      autoChatId: cfg.autoChatId,
     },
     update: {
       activeBackend: cfg.activeBackend,
@@ -199,6 +255,13 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       ytChannelId: cfg.ytChannelId,
       ytChannelTitle: cfg.ytChannelTitle,
       ytPrivacy: cfg.ytPrivacy,
+      upApiKey: cfg.upApiKey,
+      upUser: cfg.upUser,
+      upPlatforms: cfg.upPlatforms,
+      autoEnabled: cfg.autoEnabled,
+      autoIntervalMin: cfg.autoIntervalMin,
+      autoPublish: cfg.autoPublish,
+      autoChatId: cfg.autoChatId,
     },
   });
 }
@@ -238,12 +301,115 @@ async function chatZai(system: string, user: string): Promise<ChatResult> {
 
 // ---------------- OpenAI-compatible ----------------
 
+type MessageContent = string | Array<{ type?: string; text?: string }>;
+
 interface OpenAIChatResponse {
   choices?: Array<{
-    message?: { content?: string };
+    message?: {
+      content?: MessageContent | null;
+      /** Reasoning models put their scratchpad here, not in `content`. */
+      reasoning_content?: string;
+      reasoning?: string;
+    };
+    finish_reason?: string;
   }>;
   model?: string;
   error?: { message?: string; type?: string; code?: string };
+  usage?: {
+    completion_tokens?: number;
+    completion_tokens_details?: { reasoning_tokens?: number };
+  };
+}
+
+interface ChatAttempt {
+  content: string;
+  model?: string;
+  finishReason?: string;
+  usage?: OpenAIChatResponse["usage"];
+}
+
+/** Error from a non-2xx chat completion response, with the status kept. */
+class BackendHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string
+  ) {
+    super(message);
+    this.name = "BackendHttpError";
+  }
+}
+
+/**
+ * The visible text of an assistant message. Newer OpenAI-compatible servers
+ * may return `content` as an array of parts rather than a single string.
+ */
+function messageText(content: MessageContent | null | undefined): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => (typeof part === "string" ? part : part?.text ?? ""))
+      .join("");
+  }
+  return "";
+}
+
+/** Describe why a completion came back with nothing to show. */
+function emptyResponseDetail(attempt: ChatAttempt): string {
+  const bits: string[] = [];
+  if (attempt.finishReason) bits.push(`finish_reason: ${attempt.finishReason}`);
+  const reasoning = attempt.usage?.completion_tokens_details?.reasoning_tokens;
+  if (reasoning) bits.push(`${reasoning} reasoning tokens`);
+  const completion = attempt.usage?.completion_tokens;
+  if (completion) bits.push(`${completion} completion tokens`);
+  return bits.length ? ` (${bits.join(", ")})` : "";
+}
+
+/** POST one chat completion and return its visible content plus diagnostics. */
+async function postChatCompletion(
+  url: string,
+  headers: Record<string, string>,
+  body: Record<string, unknown>
+): Promise<ChatAttempt> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000); // 2-min timeout for slow local models
+
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new BackendHttpError(
+        res.status,
+        `Backend returned ${res.status} ${res.statusText}${text ? `: ${text.slice(0, 300)}` : ""}`
+      );
+    }
+
+    const json = (await res.json()) as OpenAIChatResponse;
+    if (json.error) {
+      throw new Error(
+        `Backend error: ${json.error.message || json.error.type || "unknown"}`
+      );
+    }
+    const choice = json.choices?.[0];
+    return {
+      content: messageText(choice?.message?.content),
+      model: json.model,
+      finishReason: choice?.finish_reason,
+      usage: json.usage,
+    };
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error("Backend timed out after 120s.");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function chatOpenAICompat(
@@ -264,16 +430,10 @@ async function chatOpenAICompat(
   }
 
   const url = `${baseUrl}/chat/completions`;
-  const body = {
-    model: cfg.openaiModel,
-    messages: [
-      { role: "system", content: system },
-      { role: "user", content: user },
-    ],
-    temperature: 0.85,
-    max_tokens: 4096,
-    stream: false,
-  };
+  const messages = [
+    { role: "system", content: system },
+    { role: "user", content: user },
+  ];
 
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -288,43 +448,65 @@ async function chatOpenAICompat(
     headers["api-key"] = cfg.openaiApiKey.trim();
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000); // 2-min timeout for slow local models
+  // Reasoning models (GPT-5-style, Qwen3, ...) spend part of the completion
+  // budget thinking before they write a single visible token. At 4096 the
+  // scratchpad can eat the whole budget and the answer arrives empty with
+  // finish_reason "length". Joe's JSON is long, so start with headroom for
+  // both the reasoning and the song, then retry wider if it still comes back
+  // empty (also covers an upstream that occasionally drops a response).
+  const legacyBody = (maxTokens: number) => ({
+    model: cfg.openaiModel,
+    messages,
+    temperature: 0.85,
+    max_tokens: maxTokens,
+    stream: false,
+  });
+  // Newer models reject `max_tokens` and want `max_completion_tokens`; they
+  // also pin temperature to the default, so leave it out of this body.
+  const modernBody = (maxTokens: number) => ({
+    model: cfg.openaiModel,
+    messages,
+    max_completion_tokens: maxTokens,
+    stream: false,
+  });
+  const rejectsMaxTokens = (e: unknown) =>
+    e instanceof BackendHttpError &&
+    e.status === 400 &&
+    /max_tokens|max_completion_tokens/i.test(e.message);
 
+  let attempt: ChatAttempt;
   try {
-    const res = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(
-        `Backend returned ${res.status} ${res.statusText}${text ? `: ${text.slice(0, 300)}` : ""}`
-      );
-    }
-
-    const json: OpenAIChatResponse = await res.json();
-    if (json.error) {
-      throw new Error(
-        `Backend error: ${json.error.message || json.error.type || "unknown"}`
-      );
-    }
-    const content = json.choices?.[0]?.message?.content ?? "";
-    if (!content.trim()) {
-      throw new Error("Backend returned an empty response.");
-    }
-    return {
-      content,
-      model: json.model || cfg.openaiModel,
-      backend: "openai-compat",
-    };
-  } finally {
-    clearTimeout(timeout);
+    attempt = await postChatCompletion(url, headers, legacyBody(8192));
+  } catch (e) {
+    if (!rejectsMaxTokens(e)) throw e;
+    attempt = await postChatCompletion(url, headers, modernBody(8192));
   }
+
+  if (!attempt.content.trim()) {
+    console.warn(
+      `openai-compat returned an empty response${emptyResponseDetail(attempt)}; retrying with a larger budget`
+    );
+    try {
+      attempt = await postChatCompletion(url, headers, modernBody(16000));
+    } catch (e) {
+      // A backend that predates `max_completion_tokens` rejects it outright;
+      // a wider legacy `max_tokens` still buys the answer room.
+      if (!(e instanceof BackendHttpError) || e.status !== 400) throw e;
+      attempt = await postChatCompletion(url, headers, legacyBody(16000));
+    }
+  }
+
+  if (!attempt.content.trim()) {
+    throw new Error(
+      `Backend returned an empty response${emptyResponseDetail(attempt)}. The model likely spent its whole token budget on reasoning.`
+    );
+  }
+
+  return {
+    content: attempt.content,
+    model: attempt.model || cfg.openaiModel,
+    backend: "openai-compat",
+  };
 }
 
 // ---------------- Health check ----------------
