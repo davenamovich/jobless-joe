@@ -26,6 +26,7 @@ import {
 import { CROONER_STYLES } from "@/lib/crooner-styles";
 import { DEFAULT_LANGUAGE, isLanguageKey } from "@/lib/languages";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
+import { cleanYouTubeSeo } from "@/lib/youtube-service";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -275,6 +276,7 @@ function sanitizeOutput(out: SongOutput): SongOutput {
     },
     nextEpisodeTeaser: out.nextEpisodeTeaser || "",
     nextEpisodeTitle: out.nextEpisodeTitle || "The Next Chapter",
+    youtube: cleanYouTubeSeo(out.youtube),
     storyBibleUpdate: out.storyBibleUpdate ?? {
       currentSituation: "",
       learnedSkills: [],

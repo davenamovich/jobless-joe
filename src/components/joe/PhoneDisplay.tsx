@@ -6,6 +6,7 @@ import { usePlayback, effectiveDuration } from "@/lib/playback-store";
 import { durationToSeconds } from "@/lib/walls";
 import { getVoice } from "@/lib/voices";
 import { cn } from "@/lib/utils";
+import { YouTubePreviewDialog } from "@/components/joe/YouTubePreviewDialog";
 
 /**
  * Beveled phone display with REAL audio playback.
@@ -103,6 +104,7 @@ export function PhoneDisplay({ episodeId }: { episodeId?: string }) {
   } | null>(null);
   const [mp4Busy, setMp4Busy] = useState(false);
   const [ytBusy, setYtBusy] = useState(false);
+  const [ytPreviewOpen, setYtPreviewOpen] = useState(false);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
 
   // A track loaded from the wall wins; otherwise show the episode in the
@@ -296,16 +298,17 @@ export function PhoneDisplay({ episodeId }: { episodeId?: string }) {
   /**
    * Upload the finished MP4 to YouTube (description, tags and an SRT caption
    * track built from the pack page). P&R has no YouTube tool, so this goes
-   * straight to the channel connected in Backend settings.
+   * straight to the channel connected in Backend settings. Called from the
+   * preview dialog, with any title/description edits made there.
    */
-  const publishYt = useCallback(async () => {
+  const publishYt = useCallback(async (edits: { title?: string; description?: string } = {}) => {
     if (!video || ytBusy || !videoEpisodeId) return;
     setYtBusy(true);
     try {
       const res = await fetch("/api/youtube/publish", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ jobId: video.id }),
+        body: JSON.stringify({ jobId: video.id, ...edits }),
       });
       const j = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(j.error || "YouTube upload failed.");
@@ -320,6 +323,7 @@ export function PhoneDisplay({ episodeId }: { episodeId?: string }) {
       if (fresh?.video) {
         setVideoState({ episodeId: videoEpisodeId, video: fresh.video as PhoneVideo });
       }
+      setYtPreviewOpen(false);
       toast.success(
         j.result?.captions
           ? "On YouTube with captions."
@@ -696,15 +700,22 @@ export function PhoneDisplay({ episodeId }: { episodeId?: string }) {
                         </a>
                       ) : (
                         <button
-                          onClick={publishYt}
+                          onClick={() => setYtPreviewOpen(true)}
                           disabled={ytBusy}
-                          title={video.ytError || "Upload to the connected YouTube channel"}
+                          title={video.ytError || "Check the title and description, then upload"}
                           className="rounded-full bg-black/70 px-2 py-0.5 text-[0.5rem] font-semibold uppercase tracking-wider text-white/90 backdrop-blur-sm hover:bg-black/85 disabled:opacity-60"
                         >
                           {ytBusy ? "Publishing…" : "YouTube ↑"}
                         </button>
                       )}
                     </div>
+                    <YouTubePreviewDialog
+                      jobId={video.id}
+                      open={ytPreviewOpen}
+                      onOpenChange={setYtPreviewOpen}
+                      busy={ytBusy}
+                      onPublish={publishYt}
+                    />
                   </>
                 ) : tvOpen ? (
                   <div className="absolute inset-0">
