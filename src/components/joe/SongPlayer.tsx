@@ -16,6 +16,7 @@ import {
   Play,
 } from "lucide-react";
 import { toast } from "sonner";
+import { StickmanTools } from "./StickmanTools";
 
 interface Props {
   episodeId: string;
@@ -663,6 +664,9 @@ export function SongPlayer({
           </a>
         )}
       </div>
+
+      {/* === STICKMAN JOE: memes + video (Telegram's /meme and /video) === */}
+      <StickmanTools episodeId={episodeId} title={title} />
     </div>
   );
 }
