@@ -95,6 +95,7 @@ export const BOT_COMMANDS: { command: string; description: string }[] = [
   { command: "ending", description: "Remix the last song: bigger ending" },
   { command: "ad", description: "Remix the last song: 30-second ad" },
   { command: "meme", description: "Stickman Joe memes of the last song (or /meme <topic>)" },
+  { command: "video", description: "Stickman Joe music video of the last song (preview, then MP4)" },
   { command: "length", description: "Song length (15s to 120s)" },
   { command: "mood", description: "Comedy intensity" },
   { command: "style", description: "Crooner style" },

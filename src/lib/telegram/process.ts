@@ -8,6 +8,8 @@ import { handleStart } from "./commands/start";
 import { handleHelp } from "./commands/help";
 import * as song from "./commands/song";
 import { handleMeme } from "./commands/meme";
+import { handleVideo, handleMp4Callback, MP4_CALLBACK_PREFIX } from "./commands/video";
+import { answerCallbackQuery } from "./types";
 import { handleNonCommandMessage } from "./handlers/message";
 
 // Register all commands once, at module load. Keep BOT_COMMANDS in bot.ts in
@@ -24,6 +26,7 @@ register("attitude", song.handleAttitude);
 register("ending", song.handleEnding);
 register("ad", song.handleAd);
 register("meme", handleMeme);
+register("video", handleVideo);
 register("length", song.handleLength);
 register("mood", song.handleMood);
 register("style", song.handleStyle);
@@ -33,15 +36,22 @@ register("settings", song.handleSettings);
 export async function processUpdate(update: TelegramUpdate): Promise<void> {
   try {
     // Handle callback queries (inline keyboard button presses).
+    const config = getTelegramConfig();
+
     if (update.callback_query) {
-      // await handleCallbackQuery(update.callback_query);
+      const cq = update.callback_query;
+      const cqChat = String(cq.message?.chat.id ?? "");
+      if (config.allowedChatIds.length > 0 && !config.allowedChatIds.includes(cqChat)) {
+        await answerCallbackQuery(cq.id, "🔒 This bot is private.").catch(() => {});
+        return;
+      }
+      if (cq.data?.startsWith(MP4_CALLBACK_PREFIX)) await handleMp4Callback(cq);
+      else await answerCallbackQuery(cq.id).catch(() => {});
       return;
     }
 
     const msg = update.message;
     if (!msg) return;
-
-    const config = getTelegramConfig();
 
     // Auth check: if allowedChatIds is set, only respond to those chats.
     if (config.allowedChatIds.length > 0) {
