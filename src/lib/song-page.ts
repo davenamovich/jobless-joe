@@ -8,7 +8,8 @@
  * out each lyric line in time with the song (see lib/stickman.ts).
  */
 
-import { STICKMAN_STAGE_CSS, lyricsToBeats, stickmanStageHtml, stickmanStageScript } from "./stickman";
+import { lyricsToBeats } from "./stickman";
+import { STICKMAN_STAGE_CSS, stickmanStageHtml, stickmanStageScript } from "./stickman-rig";
 
 export interface SongPageData {
   title: string;
