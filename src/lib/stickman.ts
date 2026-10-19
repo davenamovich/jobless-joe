@@ -2,10 +2,10 @@
  * Stickman Joe — a code-drawn stick figure (tie, limbs, face) posed per beat,
  * so he looks the same in every scene with no image API.
  *
- * Ported from meme-loop-engine's ralph/stickman-html.ts and trimmed for the
- * song page: Joe acts out the lyrics on a crooner stage while the MP3 plays.
- * Beats come from the lyric lines themselves (keyword → pose/prop), so a song
- * page needs no extra LLM call and the Telegram flow is no slower.
+ * Ported from meme-loop-engine's ralph/stickman-html.ts. This file is the static
+ * drawing (memes) and the lyric → beat mapping; the animated stage on song
+ * and video pages is lib/stickman-rig.ts. Beats come from the lyric lines
+ * themselves (keyword → pose/prop), so no extra LLM call is needed.
  */
 
 export const STICKMAN_POSES = [
@@ -131,8 +131,8 @@ export function beatStarts(beats: StickmanBeat[], leadIn = 0.04, leadOut = 0.04)
 // ── The figure ──────────────────────────────────────────────────────────────
 // Coordinates are relative to his centre line (x = 0); ground is y = 392.
 
-type Pt = readonly [number, number];
-interface PoseDef {
+export type Pt = readonly [number, number];
+export interface PoseDef {
   le: Pt; lh: Pt; re: Pt; rh: Pt;
   lk: Pt; lf: Pt; rk: Pt; rf: Pt;
   head?: Pt;
@@ -150,7 +150,7 @@ const LEGS = { lk: [-12, 330], lf: [-20, GROUND], rk: [12, 330], rf: [20, GROUND
 const L_DOWN = { le: [-22, 215], lh: [-30, 262] } as const;
 const R_DOWN = { re: [22, 215], rh: [30, 262] } as const;
 
-const POSES: Record<StickmanPose, PoseDef> = {
+export const POSES: Record<StickmanPose, PoseDef> = {
   stand: { ...L_DOWN, ...R_DOWN, ...LEGS },
   sing: { le: [-40, 196], lh: [-66, 168], re: [30, 200], rh: [52, 178], ...LEGS, head: [3, 0] },
   shrug: { le: [-42, 192], lh: [-58, 150], re: [42, 192], rh: [58, 150], ...LEGS },
@@ -308,108 +308,4 @@ export function renderStickmanSvg(beat: Pick<StickmanBeat, "pose" | "expression"
   ];
   const motion = pose === "walk" ? " sm-walk" : pose === "celebrate" ? " sm-jump" : beat.expression === "shocked" ? " sm-shake" : pose === "sing" ? " sm-sway" : "";
   return `<svg class="sm-joe" viewBox="0 0 ${VIEW_W} ${VIEW_H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">${ink(`M18 ${GROUND} L${VIEW_W - 18} ${GROUND}`, 0, "sm-thin sm-ground")}<g transform="translate(${cx} 0)"><g class="sm-fig${motion}"><g class="sm-bob">${parts.join("")}</g></g></g></svg>`;
-}
-
-// ── Song-page stage ─────────────────────────────────────────────────────────
-
-/**
- * CSS for the stage. Theme via custom properties on .sm-stage:
- * --sm-ink (lines), --sm-paper (head/sign fill), --sm-accent.
- */
-export const STICKMAN_STAGE_CSS = `
-.sm-stage{position:relative;margin:26px 0 0;border:1px solid var(--line,rgba(255,255,255,.14));border-radius:16px;overflow:hidden;
-  background:radial-gradient(60% 75% at 50% 0%,rgba(255,236,196,.16),transparent 70%),linear-gradient(180deg,rgba(255,255,255,.03),rgba(0,0,0,.25))}
-.sm-beat{display:none}
-.sm-beat.on{display:block}
-.sm-joe{display:block;width:100%;height:auto;max-height:52vh;overflow:visible}
-.sm-line{margin:0;padding:6px 18px 18px;text-align:center;font-size:clamp(17px,3.6vw,22px);line-height:1.4;min-height:3.2em;color:var(--sm-ink)}
-.sm-sec{position:absolute;top:12px;left:14px;font:600 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--sm-accent);opacity:.85}
-.sm-ink{stroke:var(--sm-ink);stroke-width:6;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 0}
-.sm-thin{stroke-width:4}.sm-thick{stroke-width:9}.sm-ground{stroke-width:3;opacity:.45}
-.sm-paper{fill:var(--sm-paper)}
-.sm-dot{fill:var(--sm-ink)}
-.sm-beat.drawing .sm-ink{stroke-dasharray:1;animation:sm-draw 420ms cubic-bezier(.3,.9,.4,1) var(--d) both}
-.sm-beat.drawing .sm-filled{animation:sm-draw 420ms cubic-bezier(.3,.9,.4,1) var(--d) both,sm-fill 260ms ease-out calc(var(--d) + 380ms) both}
-.sm-beat.drawing .sm-pop{animation:sm-pop 280ms ease-out var(--d) both}
-@keyframes sm-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
-@keyframes sm-fill{from{fill-opacity:0}to{fill-opacity:1}}
-@keyframes sm-pop{from{opacity:0}to{opacity:1}}
-.sm-stage.live .sm-beat.on .sm-bob{animation:sm-bob .9s ease-in-out infinite alternate}
-.sm-stage.live .sm-beat.on .sm-sway{animation:sm-sway 1.8s ease-in-out infinite alternate;transform-box:fill-box;transform-origin:50% 100%}
-.sm-beat.drawing .sm-walk{animation:sm-walk 1.1s ease-out both}
-.sm-stage.live .sm-beat.on .sm-jump{animation:sm-jump .6s ease-out 1.2s infinite}
-.sm-beat.drawing .sm-shake{animation:sm-shake .38s linear 1.2s 2}
-.sm-stage.live .sm-beat.on .sm-wag{transform-box:fill-box;transform-origin:100% 100%;animation:sm-wag .35s ease-in-out infinite alternate}
-.sm-stage.live .sm-beat.on .sm-rain{animation:sm-rain .7s linear infinite}
-.sm-stage.live .sm-beat.on .sm-steam{animation:sm-steam 1.4s ease-in-out infinite}
-.sm-stage.live .sm-beat.on .sm-glow{animation:sm-glow 1.2s ease-in-out infinite alternate}
-@keyframes sm-bob{to{transform:translateY(-4px)}}
-@keyframes sm-sway{from{transform:rotate(-2deg)}to{transform:rotate(2deg)}}
-@keyframes sm-walk{from{transform:translateX(-90px)}to{transform:none}}
-@keyframes sm-jump{50%{transform:translateY(-18px)}}
-@keyframes sm-shake{25%{transform:translateX(-5px)}75%{transform:translateX(5px)}}
-@keyframes sm-wag{to{transform:rotate(18deg)}}
-@keyframes sm-rain{from{transform:translateY(0);opacity:1}to{transform:translateY(14px);opacity:0}}
-@keyframes sm-steam{50%{transform:translateY(-4px);opacity:.4}}
-@keyframes sm-glow{to{filter:drop-shadow(0 0 8px #fbbf24)}}
-@media (prefers-reduced-motion:reduce){.sm-stage *{animation:none!important}}
-`;
-
-/** The stage markup: one hidden beat per lyric line, the caption under them. */
-export function stickmanStageHtml(beats: StickmanBeat[], tie: string): string {
-  if (beats.length === 0) return "";
-  const starts = beatStarts(beats);
-  const items = beats
-    .map(
-      (b, i) =>
-        `<div class="sm-beat${i === 0 ? " on" : ""}" data-at="${starts[i]}" data-sec="${esc(b.section ?? "")}" data-line="${esc(b.text)}">${renderStickmanSvg(b, tie)}</div>`,
-    )
-    .join("");
-  return `<section class="sm-stage" id="smStage" aria-label="Joe acts out the song">
-  <span class="sm-sec" id="smSec">${esc(beats[0].section ?? "")}</span>
-  ${items}
-  <p class="sm-line" id="smLine">${esc(beats[0].text)}</p>
-</section>`;
-}
-
-/**
- * The stage driver: follows <audio id={audioId}>, switching beats on the
- * song's clock and redrawing Joe on each new line. Paused = he holds still.
- */
-export function stickmanStageScript(audioId: string): string {
-  return `<script>
-(function () {
-  var stage = document.getElementById("smStage");
-  var a = document.getElementById(${JSON.stringify(audioId)});
-  if (!stage || !a) return;
-  var beats = stage.querySelectorAll(".sm-beat");
-  var line = document.getElementById("smLine");
-  var sec = document.getElementById("smSec");
-  var at = Array.prototype.map.call(beats, function (b) { return Number(b.getAttribute("data-at")) || 0; });
-  var cur = 0;
-  function show(i, draw) {
-    if (i === cur && !draw) return;
-    beats[cur].classList.remove("on", "drawing");
-    cur = i;
-    var b = beats[i];
-    b.classList.remove("drawing");
-    b.classList.add("on");
-    if (draw) { void b.getBoundingClientRect(); b.classList.add("drawing"); }
-    line.textContent = b.getAttribute("data-line") || "";
-    sec.textContent = b.getAttribute("data-sec") || "";
-  }
-  function sync() {
-    var d = a.duration;
-    if (!d || !isFinite(d)) return;
-    var f = a.currentTime / d, i = 0;
-    for (var k = 0; k < at.length; k++) if (f >= at[k]) i = k;
-    if (i !== cur) show(i, true);
-  }
-  function loop() { sync(); if (!a.paused) requestAnimationFrame(loop); }
-  a.addEventListener("play", function () { stage.classList.add("live"); if (cur === 0 && a.currentTime < 0.5) show(0, true); loop(); });
-  a.addEventListener("pause", function () { stage.classList.remove("live"); });
-  a.addEventListener("ended", function () { stage.classList.remove("live"); show(0, false); });
-  a.addEventListener("seeked", sync);
-})();
-</script>`;
 }

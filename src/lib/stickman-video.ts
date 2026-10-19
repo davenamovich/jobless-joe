@@ -13,7 +13,8 @@
  * block autoplay with sound), and Joe follows the song's own clock.
  */
 
-import { STICKMAN_STAGE_CSS, lyricsToBeats, stickmanStageHtml } from "./stickman";
+import { lyricsToBeats } from "./stickman";
+import { STICKMAN_STAGE_CSS, stickmanStageHtml, stickmanStageScript } from "./stickman-rig";
 
 export interface StickmanVideoData {
   title: string;
@@ -104,6 +105,7 @@ ${STICKMAN_STAGE_CSS}
 <div class="tap" id="tap" role="button" aria-label="Play"><b>▶</b><span>Tap to play</span></div>
 <div class="end" id="end"><h2>${title}</h2><p>Jobless Joe</p></div>
 <audio id="a" preload="auto" src="${esc(data.audioFile)}"></audio>
+${stickmanStageScript("a", { external: true })}
 <script>
 (function () {
   var RECORD = /[?&]record=1\\b/.test(location.search);
@@ -113,14 +115,10 @@ ${STICKMAN_STAGE_CSS}
   window.VESSEL = { recordDurationMs: durMs + END_MS, isInteractive: true, beatMs: 0 };
 
   var a = document.getElementById("a");
-  var stage = document.getElementById("smStage");
-  var beats = stage.querySelectorAll(".sm-beat");
-  var line = document.getElementById("smLine");
-  var sec = document.getElementById("smSec");
   var prog = document.getElementById("prog");
   var end = document.getElementById("end");
   var tap = document.getElementById("tap");
-  var at = Array.prototype.map.call(beats, function (b) { return Number(b.getAttribute("data-at")) || 0; });
+  var stage = window.joeStage;
 
   // The real length, once the browser has read it.
   a.addEventListener("loadedmetadata", function () {
@@ -130,50 +128,36 @@ ${STICKMAN_STAGE_CSS}
     }
   });
 
-  var cur = -1, started = false, t0 = 0;
-  function show(i) {
-    if (i === cur) return;
-    if (cur >= 0) beats[cur].classList.remove("on", "drawing");
-    cur = i;
-    var b = beats[i];
-    b.classList.add("on");
-    void b.getBoundingClientRect();
-    b.classList.add("drawing");
-    line.textContent = b.getAttribute("data-line") || "";
-    sec.textContent = b.getAttribute("data-sec") || "";
-  }
   // Recording: wall clock (the recorder mixes the audio itself).
   // Watching: the song's own clock, so pausing or a stall holds Joe too;
   // after the song ends, the end card runs on the wall clock.
-  var endedAt = 0;
+  var started = false, t0 = 0, endedAt = 0;
   a.addEventListener("ended", function () { endedAt = Date.now(); });
   function clock() {
+    if (!started) return 0;
     if (RECORD) return Date.now() - t0;
     if (endedAt) return durMs + (Date.now() - endedAt);
     return a.currentTime * 1000;
   }
+  // One loop for the whole page: Joe idles (blinks, breathes) before play.
   function tick() {
     var ms = clock();
-    var f = Math.min(1, ms / durMs), i = 0;
-    for (var k = 0; k < at.length; k++) if (f >= at[k]) i = k;
-    show(i);
-    prog.style.width = (f * 100).toFixed(2) + "%";
-    if (ms >= durMs) { end.classList.add("on"); stage.classList.remove("live"); }
-    if (ms < durMs + END_MS) requestAnimationFrame(tick);
+    var playing = started && ms < durMs && (RECORD || !a.paused);
+    if (stage) stage.update(Math.min(ms, durMs), durMs, playing);
+    prog.style.width = (Math.min(1, ms / durMs) * 100).toFixed(2) + "%";
+    if (ms >= durMs) end.classList.add("on");
+    if (!started || ms < durMs + END_MS) requestAnimationFrame(tick);
   }
   function startShow() {
     if (started) return;
     started = true;
     t0 = Date.now();
     tap.style.display = "none";
-    stage.classList.add("live");
     if (!RECORD) a.play().catch(function () {});
-    requestAnimationFrame(tick);
   }
   window.startShow = startShow;
   tap.addEventListener("click", startShow);
-  beats[0].classList.remove("on");
-  show(0);
+  requestAnimationFrame(tick);
 })();
 </script>
 </body>

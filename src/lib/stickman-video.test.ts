@@ -40,7 +40,7 @@ describe("stickman video page", () => {
   });
 
   it("follows the recorder contract: record=1, startShow, recordDurationMs, its own audio", () => {
-    assert.match(html, /record=1/);
+    assert.ok(html.includes("/[?&]record=1\\b/.test"), "a real word boundary in the page, not a backspace");
     assert.match(html, /window\.startShow = startShow/);
     assert.match(html, new RegExp(`recordDurationMs: durMs \\+ END_MS`));
     assert.match(html, /var durMs = 42000;/);
@@ -48,8 +48,13 @@ describe("stickman video page", () => {
     assert.match(html, /<audio id="a" preload="auto" src="song\.mp3">/);
   });
 
-  it("has one stage beat per sung line and escapes the title", () => {
-    assert.equal((html.match(/class="sm-beat/g) || []).length, 3);
+  it("ships the rig: one beat per sung line, the engine, one live figure; escapes the title", () => {
+    const data = JSON.parse(/<script type="application\/json" id="smData">([\s\S]*?)<\/script>/.exec(html)![1]);
+    assert.equal(data.beats.length, 3);
+    assert.equal(data.beats[0].pose, "carry");
+    assert.equal(data.beats[2].dance, true, "chorus lines dance");
+    assert.match(html, /window\.JoeRig = \{ mount: mount \}/);
+    assert.equal((html.match(/class="sm-joe"/g) || []).length, 1);
     assert.doesNotMatch(html, /<in>/);
     assert.match(html, /Jobless &lt;in&gt; a Tie/);
   });
@@ -73,5 +78,25 @@ describe("/video buttons", () => {
     assert.equal(kb.inline_keyboard[1][0].callback_data, `${MP4_CALLBACK_PREFIX}abc123`);
     assert.ok(Buffer.byteLength(kb.inline_keyboard[1][0].callback_data!) <= 64, "Telegram's callback_data limit");
     assert.equal(previewKeyboard(ref("abc123"), false).inline_keyboard.length, 1);
+  });
+});
+
+describe("stickman rig", () => {
+  it("anchors hand props to the hand and gives every prop an entrance", async () => {
+    const { propRig, buildRigData } = await import("./stickman-rig");
+    assert.equal(propRig("coffee", false).anchor, "lh");
+    assert.equal(propRig("phone", false).anchor, "rh");
+    assert.equal(propRig("cloud", false).anchor, "head");
+    assert.equal(propRig("box", true).enter, "pop");
+    assert.equal(propRig("box", false).enter, "drop");
+    const data = buildRigData([{ text: "my dog and me", pose: "stand", expression: "happy", prop: "dog" }]);
+    assert.equal(data.beats[0].cx, 200, "floor props push Joe left");
+    assert.ok(data.poses.stepL && data.poses.guns, "dance moves ship with the poses");
+  });
+
+  it("keeps the engine free of template holes and backticks (inlined verbatim)", async () => {
+    const { JOE_RIG_JS } = await import("./stickman-rig");
+    assert.doesNotMatch(JOE_RIG_JS, /\$\{|`/);
+    assert.doesNotThrow(() => new Function(JOE_RIG_JS), "parses as JS");
   });
 });
