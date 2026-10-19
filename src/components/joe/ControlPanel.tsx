@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Tooltip,
   TooltipContent,
@@ -25,7 +26,9 @@ import {
   Compass,
   Drama,
   Film,
+  Globe,
   Music,
+  NotebookPen,
   Sparkles,
   Target,
   Timer,
@@ -36,18 +39,23 @@ import {
   DURATIONS,
   EPISODES,
   INTENSITIES,
+  MAX_SCRIPT_CHARS,
+  MIN_SCRIPT_CHARS,
   TARGETS,
   type ActionKey,
   type DurationKey,
   type IntensityKey,
 } from "@/lib/joe-prompts";
 import { CROONER_STYLES } from "@/lib/crooner-styles";
+import { LANGUAGES } from "@/lib/languages";
 
 interface Props {
   episodeKey: string;
   setEpisodeKey: (v: string) => void;
   customTopic: string;
   setCustomTopic: (v: string) => void;
+  customScript: string;
+  setCustomScript: (v: string) => void;
   duration: DurationKey;
   setDuration: (v: DurationKey) => void;
   intensity: IntensityKey;
@@ -56,6 +64,8 @@ interface Props {
   setTarget: (v: string) => void;
   croonerStyle: string;
   setCroonerStyle: (v: string) => void;
+  language: string;
+  setLanguage: (v: string) => void;
   onAction: (action: ActionKey) => void;
   isLoading: boolean;
   hasEpisode: boolean;
@@ -67,6 +77,10 @@ export function ControlPanel(props: Props) {
     setEpisodeKey,
     customTopic,
     setCustomTopic,
+    // Defaulted: a stale client bundle can render this component with the prop
+    // missing, and a crash in the control panel takes the whole page with it.
+    customScript = "",
+    setCustomScript,
     duration,
     setDuration,
     intensity,
@@ -75,13 +89,19 @@ export function ControlPanel(props: Props) {
     setTarget,
     croonerStyle,
     setCroonerStyle,
+    language,
+    setLanguage,
     onAction,
     isLoading,
     hasEpisode,
   } = props;
 
   const isCustom = episodeKey === "custom";
+  const scriptText = customScript ?? "";
+  const hasScript = scriptText.trim().length >= MIN_SCRIPT_CHARS;
+  const scriptTooLong = scriptText.length > MAX_SCRIPT_CHARS;
   const activeStyle = CROONER_STYLES.find((s) => s.key === croonerStyle);
+  const activeLanguage = LANGUAGES.find((l) => l.key === language);
 
   return (
     <Card className="overflow-hidden border-border/70 shadow-sm">
@@ -123,6 +143,60 @@ export function ControlPanel(props: Props) {
               />
             </div>
           )}
+
+          {/* CUSTOM SCRIPT — a seed for any episode, not just the custom one */}
+          <div className="space-y-1.5 pt-1">
+            <div className="flex items-center justify-between">
+              <Label
+                htmlFor="custom-script"
+                className="text-xs text-muted-foreground"
+              >
+                Custom script (optional)
+              </Label>
+              {scriptText.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setCustomScript?.("")}
+                  className="text-[0.7rem] text-muted-foreground underline hover:text-foreground"
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+            <Textarea
+              id="custom-script"
+              value={scriptText}
+              onChange={(e) => setCustomScript?.(e.target.value)}
+              rows={7}
+              placeholder={`Paste your own script or notes. Joe keeps your beats, order and facts and rewrites the lines into his own voice.
+
+e.g.
+- Joe tries to cancel an AI subscription he never agreed to
+- the bot keeps calling him "valued customer"
+- he finally gets through and it's his own voice on the line`}
+              className="bg-card text-xs leading-relaxed resize-y min-h-[120px]"
+            />
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-[0.7rem] text-muted-foreground leading-relaxed">
+                {hasScript
+                  ? "Your script outranks the episode arc and topic: Joe covers every beat, in order, in his own words."
+                  : "Treats what you paste as the story to tell, not the lines to sing. Works with any episode above."}
+              </p>
+              <span
+                className={`shrink-0 text-[0.65rem] tabular-nums ${
+                  scriptTooLong ? "text-destructive" : "text-muted-foreground"
+                }`}
+              >
+                {scriptText.length}/{MAX_SCRIPT_CHARS}
+              </span>
+            </div>
+            {scriptTooLong && (
+              <p className="text-[0.7rem] text-destructive">
+                Trim it to {MAX_SCRIPT_CHARS} characters — that's a seed, not a
+                screenplay.
+              </p>
+            )}
+          </div>
         </div>
 
         <Separator />
@@ -152,6 +226,43 @@ export function ControlPanel(props: Props) {
               ))}
             </SelectContent>
           </Select>
+        </div>
+
+        <Separator />
+
+        {/* LANGUAGE */}
+        <div className="space-y-2">
+          <SectionLabel icon={<Globe className="h-3.5 w-3.5" />}>
+            Song language
+          </SectionLabel>
+          <Select value={language} onValueChange={setLanguage}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="Pick a language" />
+            </SelectTrigger>
+            <SelectContent>
+              <ScrollArea className="h-[300px]">
+                {LANGUAGES.map((l) => (
+                  <SelectItem key={l.key} value={l.key}>
+                    <div className="flex items-center gap-2">
+                      <span className="text-base leading-none">{l.flag}</span>
+                      <span className="font-medium">{l.nativeLabel}</span>
+                      {l.nativeLabel !== l.label && (
+                        <span className="text-[0.7rem] text-muted-foreground">
+                          {l.label}
+                        </span>
+                      )}
+                    </div>
+                  </SelectItem>
+                ))}
+              </ScrollArea>
+            </SelectContent>
+          </Select>
+          {activeLanguage && (
+            <p className="text-[0.7rem] text-muted-foreground italic leading-relaxed">
+              {activeLanguage.flag} Joe writes and sings in {activeLanguage.label}.
+              Production notes and the story bible stay in English.
+            </p>
+          )}
         </div>
 
         <Separator />
@@ -255,11 +366,19 @@ export function ControlPanel(props: Props) {
           <Button
             size="lg"
             className="w-full h-auto py-3 text-base font-serif"
-            disabled={isLoading || (isCustom && !customTopic.trim())}
+            disabled={
+              isLoading ||
+              scriptTooLong ||
+              (isCustom && !customTopic.trim() && !hasScript)
+            }
             onClick={() => onAction("generate")}
           >
-            <Music className="h-4 w-4 mr-2" />
-            Generate Song
+            {hasScript ? (
+              <NotebookPen className="h-4 w-4 mr-2" />
+            ) : (
+              <Music className="h-4 w-4 mr-2" />
+            )}
+            {hasScript ? "Generate From Script" : "Generate Song"}
           </Button>
 
           <p className="text-xs text-muted-foreground px-1">
@@ -370,6 +489,9 @@ export function CurrentSelectionChips({
   targetLabel,
   croonerStyleLabel,
   croonerStyleEmoji,
+  languageLabel,
+  languageFlag,
+  hasScript,
 }: {
   episodeLabel: string;
   duration: string;
@@ -377,6 +499,9 @@ export function CurrentSelectionChips({
   targetLabel: string;
   croonerStyleLabel?: string;
   croonerStyleEmoji?: string;
+  languageLabel?: string;
+  languageFlag?: string;
+  hasScript?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -403,6 +528,23 @@ export function CurrentSelectionChips({
         >
           <span className="mr-1">{croonerStyleEmoji || "🎵"}</span>
           {croonerStyleLabel}
+        </Badge>
+      )}
+      {languageLabel && (
+        <Badge variant="secondary" className="font-normal">
+          <Globe className="h-3 w-3 mr-1" />
+          {languageFlag ? `${languageFlag} ` : ""}
+          {languageLabel}
+        </Badge>
+      )}
+      {hasScript && (
+        <Badge
+          variant="outline"
+          className="font-normal border-primary/40 text-primary"
+          title="This song is seeded from your own script"
+        >
+          <NotebookPen className="h-3 w-3 mr-1" />
+          From script
         </Badge>
       )}
     </div>

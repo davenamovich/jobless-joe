@@ -23,10 +23,14 @@ export async function GET() {
       episodeTheme: r.episodeTheme,
       episodeLabel: r.episodeLabel,
       customTopic: r.customTopic,
+      // The script itself stays in the detail route — the list only needs to
+      // show that one exists.
+      hasScript: Boolean(r.customScript && r.customScript.trim()),
       duration: r.duration,
       intensity: r.intensity,
       target: r.target,
       croonerStyle: r.croonerStyle,
+      language: r.language,
       backend: r.backend,
       backendModel: r.backendModel,
       action: r.action,

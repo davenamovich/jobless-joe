@@ -6,16 +6,20 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatDistanceToNow } from "date-fns";
 import { Clock, History, Music4 } from "lucide-react";
 import { getCroonerStyle } from "@/lib/crooner-styles";
+import { getLanguage } from "@/lib/languages";
 
 export interface EpisodeListItem {
   id: string;
   createdAt: string;
   episodeLabel: string;
   customTopic: string | null;
+  /** True when the episode was seeded from the user's own script. */
+  hasScript?: boolean;
   duration: string;
   intensity: string;
   target: string;
   croonerStyle?: string;
+  language?: string;
   backend?: string;
   backendModel?: string | null;
   action: string;
@@ -67,6 +71,7 @@ export function EpisodeHistory({ episodes, onSelect, selectedId }: Props) {
           <ul className="divide-y divide-border/50">
             {episodes.map((ep) => {
               const style = getCroonerStyle(ep.croonerStyle);
+              const language = getLanguage(ep.language);
               return (
                 <li
                   key={ep.id}
@@ -103,6 +108,24 @@ export function EpisodeHistory({ episodes, onSelect, selectedId }: Props) {
                     >
                       {style.emoji} {style.label}
                     </Badge>
+                    {ep.hasScript && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] font-normal border-primary/30 text-primary"
+                        title="Seeded from your own script"
+                      >
+                        📝 Script
+                      </Badge>
+                    )}
+                    {language.key !== "en" && (
+                      <Badge
+                        variant="outline"
+                        className="text-[0.65rem] font-normal"
+                        title={`Song language: ${language.label}`}
+                      >
+                        {language.flag} {language.nativeLabel}
+                      </Badge>
+                    )}
                     {ep.backend && ep.backend !== "zai" && (
                       <Badge
                         variant="outline"

@@ -71,7 +71,9 @@ RUN addgroup -g 1001 -S nodejs \
 # Install only runtime system deps.
 #   - sqlite-libs: needed by @prisma/client (SQLite)
 #   - ffmpeg: optional, but useful if you later want to transcode audio
-RUN apk add --no-cache sqlite-libs tini
+#   - fontconfig + font-dejavu: /meme renders caption text with sharp (librsvg),
+#     which draws nothing without a system font
+RUN apk add --no-cache sqlite-libs tini fontconfig font-dejavu
 
 # Copy the Next.js standalone server. The package.json build script already
 # copies .next/static + public/ INTO the standalone dir, so we only need

@@ -18,8 +18,10 @@ import { Separator } from "@/components/ui/separator";
 import {
   AlertCircle,
   CheckCircle2,
+  Clapperboard,
   Loader2,
   Settings2,
+  Youtube,
   Zap,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -28,8 +30,30 @@ interface BackendConfigResponse {
   activeBackend: "zai" | "openai-compat";
   openaiBaseUrl: string;
   openaiModel: string;
+  audioEngine: "zai" | "acestep";
+  aceStepBaseUrl: string;
+  aceStepModel: string;
   hasApiKey: boolean;
   apiKeyMasked: string;
+  prMcpUrl: string;
+  prRef: string;
+  publicBaseUrl: string;
+  courseUrl: string;
+  hasPrKey: boolean;
+  prKeyMasked: string;
+  ytClientId: string;
+  ytPrivacy: "unlisted" | "public" | "private";
+  hasYtClient: boolean;
+  ytSecretMasked: string;
+  ytConnected: boolean;
+}
+
+interface YouTubeStatusResponse {
+  configured: boolean;
+  connected: boolean;
+  channelTitle: string;
+  privacy: string;
+  redirectUri: string;
 }
 
 interface TestResponse {
@@ -56,14 +80,44 @@ export function SettingsDialog({ onConfigChanged }: Props) {
   const [baseUrl, setBaseUrl] = useState("");
   const [model, setModel] = useState("");
   const [apiKey, setApiKey] = useState("");
+  const [audioEngine, setAudioEngine] = useState<"zai" | "acestep">("zai");
+  const [aceBaseUrl, setAceBaseUrl] = useState("");
+  const [aceModel, setAceModel] = useState("");
   const [hasExistingKey, setHasExistingKey] = useState(false);
   const [keyMasked, setKeyMasked] = useState("");
+
+  // Plunder & Riffle video engine
+  const [prUrl, setPrUrl] = useState("");
+  const [prKey, setPrKey] = useState("");
+  const [prRef, setPrRef] = useState("");
+  const [publicBase, setPublicBase] = useState("");
+  const [courseUrl, setCourseUrl] = useState("");
+  const [hasExistingPrKey, setHasExistingPrKey] = useState(false);
+  const [prKeyMasked, setPrKeyMasked] = useState("");
+  const [testingPr, setTestingPr] = useState(false);
+  const [prTest, setPrTest] = useState<{ ok: boolean; message: string } | null>(null);
+
+  // YouTube publishing (Google OAuth + YouTube Data API)
+  const [ytClientId, setYtClientId] = useState("");
+  const [ytClientSecret, setYtClientSecret] = useState("");
+  const [ytPrivacy, setYtPrivacy] = useState<"unlisted" | "public" | "private">(
+    "unlisted"
+  );
+  const [hasExistingYtClient, setHasExistingYtClient] = useState(false);
+  const [ytSecretMasked, setYtSecretMasked] = useState("");
+  const [ytConnected, setYtConnected] = useState(false);
+  const [ytStatus, setYtStatus] = useState<YouTubeStatusResponse | null>(null);
+  const [ytBusy, setYtBusy] = useState(false);
 
   // Load current config when the dialog opens.
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     setTestResult(null);
+    fetch("/api/youtube/status", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => setYtStatus(j.error ? null : j))
+      .catch(() => setYtStatus(null));
     fetch("/api/backend/config", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => {
@@ -71,9 +125,26 @@ export function SettingsDialog({ onConfigChanged }: Props) {
         setBackend(cfg.activeBackend);
         setBaseUrl(cfg.openaiBaseUrl);
         setModel(cfg.openaiModel);
+        setAudioEngine(cfg.audioEngine ?? "zai");
+        setAceBaseUrl(cfg.aceStepBaseUrl ?? "http://localhost:8001");
+        setAceModel(cfg.aceStepModel ?? "acestep/acestep-v15-turbo");
         setHasExistingKey(cfg.hasApiKey);
         setKeyMasked(cfg.apiKeyMasked);
         setApiKey("");
+        setPrUrl(cfg.prMcpUrl ?? "");
+        setPrRef(cfg.prRef ?? "");
+        setPublicBase(cfg.publicBaseUrl ?? "");
+        setCourseUrl(cfg.courseUrl ?? "");
+        setHasExistingPrKey(cfg.hasPrKey);
+        setPrKeyMasked(cfg.prKeyMasked);
+        setPrKey("");
+        setPrTest(null);
+        setYtClientId(cfg.ytClientId ?? "");
+        setYtPrivacy(cfg.ytPrivacy ?? "unlisted");
+        setHasExistingYtClient(cfg.hasYtClient);
+        setYtSecretMasked(cfg.ytSecretMasked);
+        setYtConnected(cfg.ytConnected);
+        setYtClientSecret("");
       })
       .catch(() => toast.error("Couldn't load backend config."))
       .finally(() => setLoading(false));
@@ -90,9 +161,20 @@ export function SettingsDialog({ onConfigChanged }: Props) {
           activeBackend: backend,
           openaiBaseUrl: baseUrl,
           openaiModel: model,
+          audioEngine,
+          aceStepBaseUrl: aceBaseUrl,
+          aceStepModel: aceModel,
           // Send the typed key only if the user changed it. If they left it
           // blank and an existing key was already saved, the server keeps it.
           openaiApiKey: apiKey,
+          prMcpUrl: prUrl,
+          prApiKey: prKey,
+          prRef,
+          publicBaseUrl: publicBase,
+          courseUrl,
+          ytClientId,
+          ytClientSecret,
+          ytPrivacy,
         }),
       });
       if (!res.ok) {
@@ -104,6 +186,13 @@ export function SettingsDialog({ onConfigChanged }: Props) {
       setHasExistingKey(j.config.hasApiKey);
       setKeyMasked(j.config.apiKeyMasked);
       setApiKey("");
+      setHasExistingPrKey(j.config.hasPrKey);
+      setPrKeyMasked(j.config.prKeyMasked);
+      setPrKey("");
+      setHasExistingYtClient(j.config.hasYtClient);
+      setYtSecretMasked(j.config.ytSecretMasked);
+      setYtConnected(j.config.ytConnected);
+      setYtClientSecret("");
       toast.success("Backend settings saved.");
       onConfigChanged?.();
     } catch (e) {
@@ -138,6 +227,80 @@ export function SettingsDialog({ onConfigChanged }: Props) {
     }
   };
 
+  const handleTestPr = async () => {
+    setTestingPr(true);
+    setPrTest(null);
+    try {
+      const res = await fetch("/api/video/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mcpUrl: prUrl, apiKey: prKey }),
+      });
+      const j = await res.json().catch(() => ({}));
+      const result = j.result ?? { ok: false, message: j.error || "Test failed." };
+      setPrTest(result);
+      if (result.ok) toast.success(result.message);
+      else toast.error(result.message);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Test failed.";
+      setPrTest({ ok: false, message });
+      toast.error(message);
+    } finally {
+      setTestingPr(false);
+    }
+  };
+
+  /**
+   * Save the OAuth client, then open Google's consent screen. The auth route
+   * reads the client id from the saved config, so saving first is required.
+   */
+  const handleConnectYouTube = async () => {
+    if (!ytClientId.trim()) {
+      toast.error("Paste your Google OAuth client id first.");
+      return;
+    }
+    setYtBusy(true);
+    try {
+      const saveRes = await fetch("/api/backend/config", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ytClientId, ytClientSecret, ytPrivacy }),
+      });
+      const saved = await saveRes.json().catch(() => ({}));
+      if (!saveRes.ok) throw new Error(saved.error || "Could not save the OAuth client.");
+      setHasExistingYtClient(!!saved.config?.hasYtClient);
+      setYtSecretMasked(saved.config?.ytSecretMasked ?? "");
+      setYtClientSecret("");
+
+      const res = await fetch("/api/youtube/auth", { cache: "no-store" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.url) throw new Error(j.error || "Could not start the sign-in.");
+      window.open(j.url, "_blank", "noopener,noreferrer");
+      toast.message(
+        "Finish granting access in the Google tab, then reopen these settings."
+      );
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not start the sign-in.");
+    } finally {
+      setYtBusy(false);
+    }
+  };
+
+  const handleDisconnectYouTube = async () => {
+    setYtBusy(true);
+    try {
+      const res = await fetch("/api/youtube/disconnect", { method: "POST" });
+      if (!res.ok) throw new Error("Could not disconnect YouTube.");
+      setYtConnected(false);
+      setYtStatus((s) => (s ? { ...s, connected: false, channelTitle: "" } : s));
+      toast.success("YouTube disconnected. The saved token was deleted.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not disconnect YouTube.");
+    } finally {
+      setYtBusy(false);
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
@@ -153,9 +316,10 @@ export function SettingsDialog({ onConfigChanged }: Props) {
             AI Backend Settings
           </DialogTitle>
           <DialogDescription>
-            Pick which AI powers Jobless Joe. Z.ai is the default. For local
-            models like <strong>Ace 1.5</strong> running on your machine or
-            behind ngrok, choose OpenAI-compatible and point at the base URL.
+            Pick which AI writes Joe's songs, then choose the engine that
+            performs them. The text model can be Z.ai, OpenAI, or any
+            chat-completions endpoint; audio comes from Z.ai speech or
+            ACE-Step music.
           </DialogDescription>
         </DialogHeader>
 
@@ -200,12 +364,12 @@ export function SettingsDialog({ onConfigChanged }: Props) {
                   />
                   <div className="flex-1">
                     <p className="text-sm font-semibold">
-                      OpenAI-compatible (Ace 1.5, local, ngrok)
+                      OpenAI-compatible (OpenAI, local, ngrok)
                     </p>
                     <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
                       Any HTTP endpoint that speaks the OpenAI Chat Completions
-                      protocol — LM Studio, Ollama, vLLM, LocalAI, or a custom
-                      model like Ace 1.5 tunnelled via ngrok.
+                      protocol — OpenAI, LM Studio, Ollama, vLLM, LocalAI, or a
+                      text model tunnelled via ngrok.
                     </p>
                   </div>
                 </label>
@@ -240,7 +404,7 @@ export function SettingsDialog({ onConfigChanged }: Props) {
                     id="be-model"
                     value={model}
                     onChange={(e) => setModel(e.target.value)}
-                    placeholder="ace-1.5  ·  llama-3.1-70b  ·  qwen2.5-72b"
+                    placeholder="gpt-4o-mini  ·  llama-3.1-70b  ·  qwen2.5-72b"
                     className="bg-card font-mono text-xs"
                   />
                   <p className="text-[0.7rem] text-muted-foreground">
@@ -278,6 +442,379 @@ export function SettingsDialog({ onConfigChanged }: Props) {
               </div>
             )}
 
+            {/* Audio engine */}
+            <div className="space-y-2">
+              <Label className="text-xs uppercase tracking-wider text-muted-foreground">
+                Audio engine
+              </Label>
+              <RadioGroup
+                value={audioEngine}
+                onValueChange={(v) => setAudioEngine(v as "zai" | "acestep")}
+                className="space-y-2"
+              >
+                <label
+                  htmlFor="ae-zai"
+                  className="flex items-start gap-3 rounded-md border border-border/60 p-3 cursor-pointer hover:bg-secondary/30 has-[:checked]:border-primary/60 has-[:checked]:bg-primary/5"
+                >
+                  <RadioGroupItem value="zai" id="ae-zai" className="mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">Z.ai TTS (spoken)</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
+                      Reads the finished lyrics aloud in Joe's crooner voice.
+                      Fast, but it's speech, not music.
+                    </p>
+                  </div>
+                </label>
+                <label
+                  htmlFor="ae-acestep"
+                  className="flex items-start gap-3 rounded-md border border-border/60 p-3 cursor-pointer hover:bg-secondary/30 has-[:checked]:border-primary/60 has-[:checked]:bg-primary/5"
+                >
+                  <RadioGroupItem
+                    value="acestep"
+                    id="ae-acestep"
+                    className="mt-0.5"
+                  />
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold">
+                      ACE-Step (music + vocals)
+                    </p>
+                    <p className="text-xs text-muted-foreground leading-relaxed mt-0.5">
+                      Sends Joe's lyrics and musical direction to ACE-Step, which
+                      renders an actual song. Slow on CPU; minutes per track.
+                    </p>
+                  </div>
+                </label>
+              </RadioGroup>
+
+              {audioEngine === "acestep" && (
+                <div className="space-y-4 rounded-md border border-border/60 bg-secondary/20 p-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ace-url" className="text-xs">
+                      ACE-Step base URL
+                    </Label>
+                    <Input
+                      id="ace-url"
+                      value={aceBaseUrl}
+                      onChange={(e) => setAceBaseUrl(e.target.value)}
+                      placeholder="http://localhost:8001  ·  https://abc123.ngrok.app"
+                      className="bg-card font-mono text-xs"
+                    />
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      No <code>/v1</code> needed — it's added automatically. Works
+                      with a local server or an ngrok tunnel.
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="ace-model" className="text-xs">
+                      ACE-Step model
+                    </Label>
+                    <Input
+                      id="ace-model"
+                      value={aceModel}
+                      onChange={(e) => setAceModel(e.target.value)}
+                      placeholder="acestep/acestep-v15-turbo"
+                      className="bg-card font-mono text-xs"
+                    />
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      An id from <code>GET /v1/models</code>. If the server reports
+                      the model isn't initialized, it's loaded automatically on the
+                      first track.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <Separator />
+
+            {/* Plunder & Riffle video engine */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Clapperboard className="h-4 w-4 text-primary mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">
+                    Plunder &amp; Riffle video engine
+                  </p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    One click turns a finished song into Joe&apos;s 9:16 video
+                    page, meme slideshow and hot take over MCP. Needs an agent
+                    API key from Plunder &amp; Riffle.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-md border border-border/60 bg-secondary/20 p-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="pr-url" className="text-xs">
+                    MCP endpoint
+                  </Label>
+                  <Input
+                    id="pr-url"
+                    value={prUrl}
+                    onChange={(e) => setPrUrl(e.target.value)}
+                    placeholder="https://bot.plunderandriffle.com/api/mcp"
+                    className="bg-card font-mono text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="pr-key" className="text-xs">
+                    P&amp;R API key{" "}
+                    {hasExistingPrKey && (
+                      <span className="text-muted-foreground ml-1">
+                        (saved: {prKeyMasked})
+                      </span>
+                    )}
+                  </Label>
+                  <Input
+                    id="pr-key"
+                    type="password"
+                    value={prKey}
+                    onChange={(e) => setPrKey(e.target.value)}
+                    placeholder={
+                      hasExistingPrKey
+                        ? "•••• leave blank to keep current"
+                        : "Agent API key (Authorization: Bearer …)"
+                    }
+                    className="bg-card font-mono text-xs"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="pr-ref" className="text-xs">
+                      Referral code
+                    </Label>
+                    <Input
+                      id="pr-ref"
+                      value={prRef}
+                      onChange={(e) => setPrRef(e.target.value)}
+                      placeholder="e.g. joblessjoe"
+                      className="bg-card font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="pr-course" className="text-xs">
+                      Free course link
+                    </Label>
+                    <Input
+                      id="pr-course"
+                      value={courseUrl}
+                      onChange={(e) => setCourseUrl(e.target.value)}
+                      placeholder="https://www.plunderandriffle.com/joblessjoe"
+                      className="bg-card font-mono text-xs"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="pr-public" className="text-xs">
+                    Public audio base URL (optional)
+                  </Label>
+                  <Input
+                    id="pr-public"
+                    value={publicBase}
+                    onChange={(e) => setPublicBase(e.target.value)}
+                    placeholder="https://your-app.example.com"
+                    className="bg-card font-mono text-xs"
+                  />
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    P&amp;R fetches the song from a public https URL. Leave blank
+                    on localhost and each video publishes the MP3 to here.now
+                    first.
+                  </p>
+                </div>
+
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleTestPr}
+                  disabled={testingPr || !prUrl}
+                  className="w-full gap-1.5"
+                >
+                  {testingPr ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Clapperboard className="h-3.5 w-3.5" />
+                  )}
+                  {testingPr ? "Checking…" : "Test P&R connection"}
+                </Button>
+
+                {prTest && (
+                  <div
+                    className={`flex items-start gap-2 rounded-md p-3 text-sm ${
+                      prTest.ok
+                        ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                        : "bg-destructive/10 text-destructive"
+                    }`}
+                  >
+                    {prTest.ok ? (
+                      <CheckCircle2 className="h-4 w-4 mt-0.5 shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                    )}
+                    <span className="leading-snug">{prTest.message}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* YouTube publishing */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Youtube className="h-4 w-4 text-primary mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">YouTube publishing</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    P&amp;R has no YouTube tool, so a finished video uploads
+                    straight to your own channel through the YouTube Data API —
+                    with the description, tags and an SRT caption track built from
+                    the pack page. Requires a Google Cloud OAuth client of type{" "}
+                    <em>Web application</em>.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-4 rounded-md border border-border/60 bg-secondary/20 p-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="yt-id" className="text-xs">
+                    OAuth client ID
+                  </Label>
+                  <Input
+                    id="yt-id"
+                    value={ytClientId}
+                    onChange={(e) => setYtClientId(e.target.value)}
+                    placeholder="1234567890-abcdefg.apps.googleusercontent.com"
+                    className="bg-card font-mono text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label htmlFor="yt-secret" className="text-xs">
+                    OAuth client secret{" "}
+                    {hasExistingYtClient && (
+                      <span className="text-muted-foreground ml-1">
+                        (saved: {ytSecretMasked})
+                      </span>
+                    )}
+                  </Label>
+                  <Input
+                    id="yt-secret"
+                    type="password"
+                    value={ytClientSecret}
+                    onChange={(e) => setYtClientSecret(e.target.value)}
+                    placeholder={
+                      hasExistingYtClient
+                        ? "•••• leave blank to keep current"
+                        : "GOCSPX-…"
+                    }
+                    className="bg-card font-mono text-xs"
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    Authorised redirect URI (add this in Google Cloud)
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <code className="flex-1 truncate rounded border border-border/60 bg-card px-2 py-1.5 text-[0.7rem]">
+                      {ytStatus?.redirectUri ?? "—"}
+                    </code>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-8 shrink-0 text-xs"
+                      onClick={() => {
+                        const uri = ytStatus?.redirectUri;
+                        if (!uri) return;
+                        navigator.clipboard
+                          ?.writeText(uri)
+                          .then(() => toast.success("Redirect URI copied."))
+                          .catch(() => toast.error("Copy failed — select it by hand."));
+                      }}
+                      disabled={!ytStatus?.redirectUri}
+                    >
+                      Copy
+                    </Button>
+                  </div>
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    Google only redirects to a URI registered on the client. Add
+                    it under <em>Credentials → OAuth client → Authorised redirect
+                    URIs</em>, then press Connect.
+                  </p>
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label className="text-xs">
+                    Default visibility on upload
+                  </Label>
+                  <RadioGroup
+                    value={ytPrivacy}
+                    onValueChange={(v) =>
+                      setYtPrivacy(v as "unlisted" | "public" | "private")
+                    }
+                    className="flex flex-wrap gap-3"
+                  >
+                    {(["unlisted", "private", "public"] as const).map((p) => (
+                      <label
+                        key={p}
+                        htmlFor={`yt-priv-${p}`}
+                        className="flex items-center gap-2 text-xs capitalize"
+                      >
+                        <RadioGroupItem value={p} id={`yt-priv-${p}`} />
+                        {p}
+                      </label>
+                    ))}
+                  </RadioGroup>
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    Unlisted is the safe default: the video gets a link you can
+                    review before making it public.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleConnectYouTube}
+                    disabled={ytBusy || !ytClientId.trim()}
+                    className="gap-1.5"
+                  >
+                    {ytBusy ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Youtube className="h-3.5 w-3.5" />
+                    )}
+                    {ytConnected ? "Reconnect" : "Connect YouTube"}
+                  </Button>
+                  {ytConnected && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleDisconnectYouTube}
+                      disabled={ytBusy}
+                      className="text-xs"
+                    >
+                      Disconnect
+                    </Button>
+                  )}
+                  <span
+                    className={`ml-auto text-[0.7rem] ${
+                      ytConnected ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"
+                    }`}
+                  >
+                    {ytConnected
+                      ? `Connected${ytStatus?.channelTitle ? ` — ${ytStatus.channelTitle}` : ""}`
+                      : ytStatus?.configured
+                        ? "Not connected"
+                        : "No client configured"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <Separator />
 
             {/* Test result */}
@@ -313,7 +850,7 @@ export function SettingsDialog({ onConfigChanged }: Props) {
                 Testing…
               </>
             ) : (
-              "Test connection"
+              "Test text model"
             )}
           </Button>
           <Button size="sm" onClick={handleSave} disabled={loading || saving}>
