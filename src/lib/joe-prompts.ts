@@ -9,6 +9,7 @@
  * very first line.
  */
 
+import { RETIRED_EPISODES, SEASON, seasonBrief, seasonEpisodeFor } from "@/lib/season";
 import { getCroonerStyle } from "@/lib/crooner-styles";
 import { getLanguage } from "@/lib/languages";
 import { budgetFor, budgetBrief } from "@/lib/lyric-budget";
@@ -60,24 +61,15 @@ export const INTENSITIES: {
   { key: "unhinged", label: "Absolutely unhinged (but lovable)", hint: "Glitter cannon of jokes." },
 ];
 
-export const EPISODES: { key: string; label: string; arc: string }[] = [
-  { key: "unemployed-intro", label: "The Unemployed Introduction", arc: "Joe introduces himself and the absurdity of being unemployable in an AI age." },
-  { key: "rejection-blues", label: "The Rejection Letter Blues", arc: "Joe reads yet another rejection. Then another. They get progressively weirder." },
-  { key: "joe-discovers-ai", label: "Joe Discovers AI", arc: "Joe talks to an AI for the first time. The AI is more polite than his last recruiter." },
-  { key: "joe-discovers-vibe-coding", label: "Joe Discovers Vibe Coding", arc: "Joe learns he can describe what he wants and watch it appear." },
-  { key: "joe-builds-first-app", label: "Joe Builds His First App", arc: "Joe ships something. It is rough. He is impossibly proud." },
-  { key: "joe-roasts-silicon-valley", label: "Joe Roasts Silicon Valley", arc: "Joe has opinions about founders who burn billions building nothing." },
-  { key: "joe-vs-college-degree", label: "Joe vs. The College Degree", arc: "Joe debates whether the four-year degree is still the gatekeeper." },
-  { key: "joe-vs-resume", label: "Joe vs. The Résumé", arc: "Joe wonders aloud why we still describe humans in bullet points." },
-  { key: "joe-explains-ai-family", label: "Joe Explains AI to His Family", arc: "Joe's aunt thinks AI is a cabal. Joe tries to bring her along gently." },
-  { key: "joe-starts-business", label: "Joe Starts His Own Business", arc: "Joe hangs a shingle. It is digital. He has no shingle budget." },
-  { key: "joe-ai-expert-overnight", label: "Joe Becomes an AI Expert Overnight", arc: "Joe is now being called an expert. He finds this hilarious." },
-  { key: "joe-vs-vcs", label: "Joe Challenges the Venture Capitalists", arc: "Joe meets a VC who asks for his TAM. Joe defines TAM differently." },
-  { key: "joe-first-customer", label: "Joe's First Customer", arc: "Someone pays Joe real money. He has opinions about this." },
-  { key: "joe-builds-empire", label: "Joe Builds His Digital Empire", arc: "Joe's empire is small, but it is his, and it has a coffee budget." },
-  { key: "bootcamp-revelation", label: "The Bootcamp Revelation", arc: "Joe realizes he can teach other people what he half-learned by accident." },
-  { key: "next-chapter", label: "The Next Chapter", arc: "Joe hints at where the story is going next. Curiosity rises." },
-];
+/** The season's episodes, in order (see season.ts). */
+export const EPISODES: { key: string; label: string; arc: string }[] = SEASON.map(
+  ({ key, label, arc }) => ({ key, label, arc })
+);
+
+/** Every episode key a request may name: the season plus retired ones. */
+export function isEpisodeKey(key: string): boolean {
+  return EPISODES.some((e) => e.key === key) || RETIRED_EPISODES.some((e) => e.key === key);
+}
 
 export const TARGETS: { key: string; label: string }[] = [
   { key: "job-seekers", label: "Job seekers" },
@@ -151,7 +143,7 @@ export const ACTIONS: {
     shortLabel: "Continue",
     emoji: "➡️",
     instruction:
-      "Produce the next episode of Joe's story, continuing from the most recent one. Advance the arc. Do not repeat the same jokes.",
+      "Produce the next episode of Joe's Season 1 story (see SEASON 1 STORY ARC for which one), picking up from the most recent episode. Do not repeat the same jokes.",
   },
   {
     key: "alt-hooks",
@@ -245,18 +237,15 @@ export interface StoryBible {
 
 export const EMPTY_STORY_BIBLE: StoryBible = {
   currentSituation:
-    "Jobless Joe is unemployed, underappreciated, and one bad coffee away from writing a strongly worded letter to the entire economy. He has not yet discovered AI.",
+    "Season 1, before episode 1. Joe has a steady job, a tie he's proud of, and no idea that an email signed \"The Team\" is about to lay him off. He has never used AI.",
   learnedSkills: [],
   builtThings: [],
   characters: ["Jobless Joe"],
   runningJokes: [],
   previousPunchlines: [],
-  unresolvedStorylines: [
-    "Joe still needs a job.",
-    "Joe has not yet heard of AI.",
-  ],
+  unresolvedStorylines: [],
   nextDevelopment:
-    "Joe discovers, in the most ridiculous way possible, that there is a thing called AI.",
+    "Episode 1: Joe is laid off by email and walks into a job market with 400 applicants per opening.",
   episodeCount: 0,
 };
 
@@ -684,7 +673,16 @@ export interface GenerateRequest {
 }
 
 export function buildUserPrompt(req: GenerateRequest): string {
-  const episode = EPISODES.find((e) => e.key === req.episodeKey);
+  const seasonEpisode = seasonEpisodeFor(req.episodeKey, req.action, req.storyBible.episodeCount);
+  // Past the season finale, "continue" has no preset episode: the season
+  // brief tells the model to improvise the next bootcamp story.
+  const pastFinale =
+    req.action === "continue" && req.episodeKey !== "custom" && !seasonEpisode;
+  const episode = pastFinale
+    ? { label: "Life at the Bootcamp", arc: "Season 2: Joe runs his AI bootcamp. A new student brings in a new job-market absurdity." }
+    : seasonEpisode ??
+      EPISODES.find((e) => e.key === req.episodeKey) ??
+      RETIRED_EPISODES.find((e) => e.key === req.episodeKey);
   const episodeArc =
     req.episodeKey === "custom" && req.customTopic
       ? `Custom topic: ${req.customTopic}. Treat it as an angle on Joe's job hunt, his AI journey or his bootcamp, never as a new subject (see STAY ON MESSAGE).`
@@ -728,13 +726,19 @@ How to use the script:
 `.trim()
     : "";
 
+  // Series songs see the whole season and where this one sits in it.
+  const seasonBlock =
+    seasonEpisode || pastFinale
+      ? `\n${seasonBrief(seasonEpisode)}\n`
+      : "";
+
   return `EPISODE REQUEST
 ================
-Selected episode theme: ${req.episodeLabel}
+Selected episode theme: ${seasonEpisode || pastFinale ? episode?.label : req.episodeLabel}
 Story arc guidance: ${episodeArc}
 Custom topic (if any): ${req.customTopic ?? "(none)"}
 Custom script: ${script ? "YES — see SCRIPT TO FOLLOW below, it outranks the arc and topic" : "(none)"}
-
+${seasonBlock}
 Song duration: ${req.duration} (${duration?.words ?? "appropriate length"})
 LYRIC BUDGET (hard): ${budgetBrief(req.duration, duration?.label)}
 END THE SONG PROPERLY: the last line sung is the punchline, sized to land inside ${req.duration}.

@@ -60,7 +60,7 @@ interface ApiResponse {
 
 export default function Home() {
   // === Form state ===
-  const [episodeKey, setEpisodeKey] = useState<string>("joe-discovers-ai");
+  const [episodeKey, setEpisodeKey] = useState<string>("unemployed-intro");
   const [customTopic, setCustomTopic] = useState<string>("");
   // A seed Joe has to follow: he keeps its beats and facts, rewrites the lines.
   const [customScript, setCustomScript] = useState<string>("");
@@ -99,6 +99,23 @@ export default function Home() {
   // Set only when the editor pass shortened the lyric to fit its time.
   const [lyricTightened, setLyricTightened] = useState(false);
   const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
+  const [resettingStory, setResettingStory] = useState(false);
+
+  // Start Joe's story over from Season 1, episode 1. Songs are kept.
+  const resetStory = useCallback(async () => {
+    setResettingStory(true);
+    try {
+      const res = await fetch("/api/story-bible", { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.storyBible) throw new Error(j.error || "Could not reset the story.");
+      setStoryBible(j.storyBible);
+      toast.success("Story reset. Next up: Season 1, episode 1.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not reset the story.");
+    } finally {
+      setResettingStory(false);
+    }
+  }, []);
   const [episodes, setEpisodes] = useState<EpisodeListItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingLabel, setLoadingLabel] = useState<string>("Joe is warming up…");
@@ -532,7 +549,11 @@ export default function Home() {
                     </span>
                   )}
                 </div>
-                <StoryBibleCard storyBible={storyBible} />
+                <StoryBibleCard
+                  storyBible={storyBible}
+                  onReset={resetStory}
+                  resetting={resettingStory}
+                />
               </div>
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">
