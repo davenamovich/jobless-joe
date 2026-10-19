@@ -16,9 +16,11 @@ import { db } from "@/lib/db";
 import { escapeHtml, postJson } from "../song-flow";
 import { getSession, updateSession } from "../sessions";
 import { loadBackendConfig } from "@/lib/ai-backend";
-import { getJobStatus, requestMp4, type PrConfig } from "@/lib/pr-mcp";
+import { waitForMp4, type PrConfig } from "@/lib/pr-mcp";
+import { postMp4ToSocials } from "@/lib/upload-post";
 
 export const MP4_CALLBACK_PREFIX = "mp4:";
+export const POST_CALLBACK_PREFIX = "up:";
 const KEEP_PAGES = 5;
 const MP4_POLL_MS = 15_000;
 const MP4_GIVE_UP_MS = 6 * 60_000;
@@ -28,7 +30,11 @@ export interface VideoPageRef {
   url: string;
   title: string;
   createdAt: number;
+  /** The song this video is of — for its YouTube SEO copy when posting. */
+  episodeId?: string;
   mp4Url?: string;
+  /** Upload-Post request id once this MP4 was posted — never post twice. */
+  postRequestId?: string;
 }
 
 // One video job (page or MP4) at a time per chat.
@@ -79,7 +85,13 @@ export async function handleVideo(_args: string[], msg: TelegramMessage) {
   const status = await say(chatId, `🎬 Setting up a stickman preview of <b>${escapeHtml(last.title)}</b>…`, "send video status");
   try {
     const page = await postJson<{ url: string; title: string }>("/api/stickman-video", { episodeId: last.id });
-    const ref: VideoPageRef = { token: randomBytes(6).toString("hex"), url: page.url, title: page.title, createdAt: Date.now() };
+    const ref: VideoPageRef = {
+      token: randomBytes(6).toString("hex"),
+      url: page.url,
+      title: page.title,
+      createdAt: Date.now(),
+      episodeId: last.id,
+    };
     updateSession(chatId, {
       videoPages: rememberPage(storedPages(chatId, msg.from?.username || "", msg.from?.first_name || ""), ref),
     });
@@ -107,17 +119,7 @@ export async function handleVideo(_args: string[], msg: TelegramMessage) {
 
 /** Ask P&R for the MP4 and wait for it (polling), up to MP4_GIVE_UP_MS. */
 async function renderMp4(client: PrConfig, pageUrl: string): Promise<string> {
-  const { pack } = await requestMp4(client, pageUrl);
-  if (pack.mp4Url) return pack.mp4Url;
-  if (!pack.jobId) throw new Error("P&R didn't start the render.");
-  const deadline = Date.now() + MP4_GIVE_UP_MS;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, MP4_POLL_MS));
-    const { pack: p, status } = await getJobStatus(client, "mp4", pack.jobId);
-    if (p.mp4Url) return p.mp4Url;
-    if (/fail/i.test(status)) throw new Error("The MP4 render failed (credits are refunded).");
-  }
-  throw new Error("The MP4 is taking longer than usual — try the button again in a few minutes.");
+  return waitForMp4(client, pageUrl, { pollMs: MP4_POLL_MS, giveUpMs: MP4_GIVE_UP_MS });
 }
 
 /** The 🎬 Make MP4 button. */
@@ -169,10 +171,17 @@ export async function handleMp4Callback(cq: TelegramCallbackQuery) {
   }
 }
 
+export function postKeyboard(ref: Pick<VideoPageRef, "token">): InlineKeyboardMarkup {
+  return { inline_keyboard: [[{ text: "📤 Post to socials", callback_data: POST_CALLBACK_PREFIX + ref.token }]] };
+}
+
 /** Post the MP4 as a video; fall back to the link if Telegram won't fetch it. */
 async function sendMp4(chatId: number, ref: VideoPageRef & { mp4Url?: string }) {
   if (!ref.mp4Url) return;
   const caption = `🎬 <b>${escapeHtml(ref.title)}</b>\n<i>Hosted ~24h — save it now.</i>`;
+  const cfg = await loadBackendConfig();
+  // Only offer the button when Upload-Post is set up and this one isn't posted yet.
+  const markup = cfg.upApiKey.trim() && !ref.postRequestId ? postKeyboard(ref) : undefined;
   const sent = await safeReply(
     () =>
       telegramApi("sendVideo", {
@@ -181,8 +190,41 @@ async function sendMp4(chatId: number, ref: VideoPageRef & { mp4Url?: string }) 
         caption,
         parse_mode: "HTML",
         supports_streaming: true,
+        ...(markup ? { reply_markup: markup } : {}),
       }).then(() => true),
     "send mp4 video",
   );
-  if (!sent) await say(chatId, `${caption}\n\n${ref.mp4Url}`, "send mp4 link");
+  if (!sent) await say(chatId, `${caption}\n\n${ref.mp4Url}`, "send mp4 link", markup);
+}
+
+/** The 📤 Post to socials button. */
+export async function handlePostCallback(cq: TelegramCallbackQuery) {
+  const chatId = cq.message?.chat.id;
+  const token = (cq.data || "").slice(POST_CALLBACK_PREFIX.length);
+  const answer = (text: string) => safeReply(() => tg.answerCallbackQuery(cq.id, text), "answer post callback");
+  if (!chatId) return void (await answer("This button has expired."));
+
+  const ref = storedPages(chatId, cq.from.username || "", cq.from.first_name || "").find((p) => p.token === token);
+  if (!ref?.mp4Url) return void (await answer("That video has expired — run /video again."));
+  if (ref.postRequestId) return void (await answer("Already posted."));
+  if (busyChats.has(chatId)) return void (await answer("Joe is busy — try again in a moment."));
+
+  busyChats.add(chatId);
+  await answer("Posting to socials…");
+  if (cq.message) {
+    await safeReply(
+      () => telegramApi("editMessageReplyMarkup", { chat_id: chatId, message_id: cq.message!.message_id, reply_markup: { inline_keyboard: [] } }),
+      "drop post button",
+    );
+  }
+  try {
+    const { requestId, summary } = await postMp4ToSocials(ref.mp4Url, ref.title, { episodeId: ref.episodeId });
+    updateSession(chatId, { videoPages: rememberPage(storedPages(chatId), { ...ref, postRequestId: requestId }) });
+    await say(chatId, `📤 <b>${escapeHtml(ref.title)}</b>\n${escapeHtml(summary)}`, "send post result");
+  } catch (err) {
+    console.error("[telegram.video] post failed", err);
+    await say(chatId, `😵 ${escapeHtml(err instanceof Error ? err.message : String(err))}`, "send post error", postKeyboard(ref));
+  } finally {
+    busyChats.delete(chatId);
+  }
 }

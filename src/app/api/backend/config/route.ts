@@ -4,12 +4,15 @@ import {
   ACE_STEP_DEFAULT_URL,
   COURSE_DEFAULT_URL,
   PR_MCP_DEFAULT_URL,
+  AUTO_DEFAULT_INTERVAL_MIN,
+  UP_DEFAULT_PLATFORMS,
   loadBackendConfig,
   saveBackendConfig,
   type AudioEngine,
   type BackendConfig,
   type BackendKey,
 } from "@/lib/ai-backend";
+import { parsePlatforms } from "@/lib/upload-post";
 
 export const runtime = "nodejs";
 
@@ -64,14 +67,24 @@ function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
     ytPrivacy: VALID_YT_PRIVACY.includes(cfg.ytPrivacy ?? "")
       ? (cfg.ytPrivacy as string)
       : "unlisted",
+    upApiKey: (cfg.upApiKey ?? "").trim(),
+    upUser: (cfg.upUser ?? "").trim(),
+    upPlatforms: parsePlatforms(cfg.upPlatforms ?? "").join(",") || UP_DEFAULT_PLATFORMS,
+    autoEnabled: !!cfg.autoEnabled,
+    // Never faster than every 15 minutes — each run is a full song render.
+    autoIntervalMin: Math.min(24 * 60, Math.max(15, Math.round(Number(cfg.autoIntervalMin) || AUTO_DEFAULT_INTERVAL_MIN))),
+    autoPublish: !!cfg.autoPublish,
+    autoChatId: String(cfg.autoChatId ?? "").trim(),
   };
 }
 
 /** Never hand API keys to the browser — only whether they exist. */
 function publicConfig(cfg: BackendConfig) {
-  const { openaiApiKey, prApiKey, ytClientSecret, ytRefreshToken, ...rest } = cfg;
+  const { openaiApiKey, prApiKey, ytClientSecret, ytRefreshToken, upApiKey, ...rest } = cfg;
   return {
     ...rest,
+    hasUpKey: !!upApiKey,
+    upKeyMasked: upApiKey ? maskKey(upApiKey) : "",
     hasApiKey: !!openaiApiKey,
     apiKeyMasked: openaiApiKey ? maskKey(openaiApiKey) : "",
     hasPrKey: !!prApiKey,
@@ -111,9 +124,26 @@ export async function PATCH(req: NextRequest) {
   if (!body.prApiKey) merged.prApiKey = current.prApiKey;
   // Same rule for the YouTube client secret: blank = keep the saved one.
   if (!body.ytClientSecret) merged.ytClientSecret = current.ytClientSecret;
+  if (!body.upApiKey) merged.upApiKey = current.upApiKey;
 
   const cfg = sanitize(merged);
-  await saveBackendConfig(cfg);
+  try {
+    await saveBackendConfig(cfg);
+  } catch (e) {
+    console.error("[backend.config] save failed", e);
+    const msg = e instanceof Error ? e.message : String(e);
+    // A dev server started before `prisma generate` still holds the old
+    // client, which rejects columns added since — say so instead of "500".
+    const stale = /Unknown argument|Unknown field|does not exist/i.test(msg);
+    return NextResponse.json(
+      {
+        error: stale
+          ? "The database client is out of date — restart the server (after `npx prisma generate` and `npx prisma db push`)."
+          : `Couldn't save settings: ${msg.split("\n").filter(Boolean).pop()?.slice(0, 300)}`,
+      },
+      { status: 500 }
+    );
+  }
   return NextResponse.json({ ok: true, config: publicConfig(cfg) });
 }
 

@@ -351,11 +351,13 @@ THE OPENING HOOK
 
 The FIRST line must grab attention immediately. Never open with background, introduction, or generic motivational statements. Start with something unexpected, relatable, controversial, or absurd.
 
-Examples (inspiration only — always generate fresh jokes):
-- Joe gets rejected by a company whose chatbot can't spell his name.
-- Joe is told he needs five years of experience with a tool released yesterday.
-- Joe discovers he can build an app before finishing his morning coffee.
-- A VC just invested millions in a company with no customers, while Joe built something useful for the price of lunch.
+Find the opener in the specific situation of THIS song — a concrete object, a line of dialogue, a weird detail of the setting. The series has already used these openers; treat them as off-limits unless the request names them:
+- a company chatbot that can't spell Joe's name
+- "five years of experience with a tool released yesterday"
+- building an app before the morning coffee
+- a VC funding a company with no customers
+
+Each request includes a FRESHNESS section listing Joe's recent songs. Never echo their premises, openers, hooks or punchlines.
 
 =========================
 NARRATIVE STRUCTURE
@@ -623,6 +625,8 @@ export interface GenerateRequest {
     closingLine: string;
     nextEpisodeTeaser: string;
   } | null;
+  /** The FRESHNESS block (recent songs to avoid + comic angle), prebuilt. */
+  freshness?: string;
 }
 
 export function buildUserPrompt(req: GenerateRequest): string {
@@ -695,7 +699,9 @@ ${scriptBlock ? `
 ${scriptBlock}
 ` : ""}
 ${previousEpisodeBlock}
-
+${req.freshness ? `
+${req.freshness}
+` : ""}
 CURRENT STORY BIBLE (honor continuity, then propose an updated version)
 ========================================================================
 - Joe's current situation: ${sb.currentSituation}
@@ -715,6 +721,7 @@ REMEMBER
 - Write the song itself in ${lang.label}. Compose it natively — do not translate.
 - Keep Joe's crooner voice unmistakable.
 - Lead with a hook that stops a social scroll.
+- Fresh material only: nothing from the recent songs listed under FRESHNESS.
 - Stay inside the lyric budget, and end on the punchline — the last line sung.${script ? "\n- Cover every beat of the script, in its order. Joe's wording, the user's content." : ""}
 - The storyBibleUpdate should reflect what genuinely changed in THIS episode.`;
 }

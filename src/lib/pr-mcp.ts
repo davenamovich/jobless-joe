@@ -446,6 +446,28 @@ export async function requestMp4(
   return { pack: await withMp4File(parsePack(data)), text };
 }
 
+/**
+ * Film a page to MP4 and wait for it (polling get_job_status), up to giveUpMs.
+ * Returns the MP4 file URL.
+ */
+export async function waitForMp4(
+  cfg: PrConfig,
+  pageUrl: string,
+  { pollMs = 15_000, giveUpMs = 6 * 60_000 } = {}
+): Promise<string> {
+  const { pack } = await requestMp4(cfg, pageUrl);
+  if (pack.mp4Url) return pack.mp4Url;
+  if (!pack.jobId) throw new PrError("P&R didn't start the render.");
+  const deadline = Date.now() + giveUpMs;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, pollMs));
+    const { pack: p, status } = await getJobStatus(cfg, "mp4", pack.jobId);
+    if (p.mp4Url) return p.mp4Url;
+    if (/fail/i.test(status)) throw new PrError("The MP4 render failed (credits are refunded).");
+  }
+  throw new PrError("The MP4 is taking longer than usual — try again in a few minutes.");
+}
+
 /** Auth/credit check used by the settings dialog. */
 export async function testPrConnection(
   cfg: PrConfig

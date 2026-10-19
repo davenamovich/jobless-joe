@@ -26,6 +26,7 @@ import {
 import { mirrorMp4 } from "@/lib/video-service";
 import type { SongOutput } from "@/lib/joe-prompts";
 import { getLanguage } from "@/lib/languages";
+import { youtubeUploadCopy } from "@/lib/youtube-seo";
 
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 
@@ -544,6 +545,20 @@ export function buildYouTubeMetadata(input: {
   };
 }
 
+/**
+ * Swap in the song's SEO title, description and tags (youtube-seo.ts). If
+ * that fails for any reason, keep the basic metadata — never block an upload.
+ */
+async function withSeo(episodeId: string, base: YouTubeMetadata): Promise<YouTubeMetadata> {
+  try {
+    const copy = await youtubeUploadCopy(episodeId);
+    return { ...base, title: copy.title, description: copy.description, tags: copy.tags };
+  } catch (e) {
+    console.warn("[youtube] SEO copy unavailable, using basic metadata", e);
+    return base;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Upload
 // ---------------------------------------------------------------------------
@@ -716,15 +731,18 @@ export async function publishToYouTube(
   });
   const privacy = (opts.privacy || cfg.ytPrivacy || "unlisted").toLowerCase();
 
-  const meta = buildYouTubeMetadata({
-    episodeTitle: episode.title,
-    output,
-    postCopy: job.postCopy,
-    languageKey: episode.language,
-    privacy: ["public", "private", "unlisted"].includes(privacy)
-      ? privacy
-      : "unlisted",
-  });
+  const meta = await withSeo(
+    episode.id,
+    buildYouTubeMetadata({
+      episodeTitle: episode.title,
+      output,
+      postCopy: job.postCopy,
+      languageKey: episode.language,
+      privacy: ["public", "private", "unlisted"].includes(privacy)
+        ? privacy
+        : "unlisted",
+    })
+  );
 
   await db.videoJob.update({
     where: { id: job.id },
@@ -825,13 +843,16 @@ export async function previewYouTube(jobId: string): Promise<{
   );
 
   return {
-    meta: buildYouTubeMetadata({
-      episodeTitle: episode.title,
-      output,
-      postCopy: job.postCopy,
-      languageKey: episode.language,
-      privacy: cfg.ytPrivacy,
-    }),
+    meta: await withSeo(
+      episode.id,
+      buildYouTubeMetadata({
+        episodeTitle: episode.title,
+        output,
+        postCopy: job.postCopy,
+        languageKey: episode.language,
+        privacy: cfg.ytPrivacy,
+      })
+    ),
     cues: captions.cues,
     srt: captions.srt,
     source: captions.source,

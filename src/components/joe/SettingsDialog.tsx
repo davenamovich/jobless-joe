@@ -15,12 +15,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import {
   AlertCircle,
   CheckCircle2,
   Clapperboard,
   Loader2,
+  Send,
   Settings2,
+  Timer,
   Youtube,
   Zap,
 } from "lucide-react";
@@ -46,7 +50,23 @@ interface BackendConfigResponse {
   hasYtClient: boolean;
   ytSecretMasked: string;
   ytConnected: boolean;
+  upUser: string;
+  upPlatforms: string;
+  hasUpKey: boolean;
+  upKeyMasked: string;
+  autoEnabled: boolean;
+  autoIntervalMin: number;
+  autoPublish: boolean;
 }
+
+interface AutopilotStatus {
+  running: boolean;
+  step: string;
+  lastRunAt: string | null;
+  lastResult: string;
+}
+
+const UP_PLATFORM_OPTIONS = ["tiktok", "instagram", "youtube", "facebook", "x", "threads", "linkedin", "bluesky"];
 
 interface YouTubeStatusResponse {
   configured: boolean;
@@ -109,11 +129,29 @@ export function SettingsDialog({ onConfigChanged }: Props) {
   const [ytStatus, setYtStatus] = useState<YouTubeStatusResponse | null>(null);
   const [ytBusy, setYtBusy] = useState(false);
 
+  // Upload-Post
+  const [upKey, setUpKey] = useState("");
+  const [upUser, setUpUser] = useState("");
+  const [upPlatforms, setUpPlatforms] = useState<string[]>([]);
+  const [hasExistingUpKey, setHasExistingUpKey] = useState(false);
+  const [upKeyMasked, setUpKeyMasked] = useState("");
+
+  // Autopilot
+  const [autoEnabled, setAutoEnabled] = useState(false);
+  const [autoInterval, setAutoInterval] = useState(60);
+  const [autoPublish, setAutoPublish] = useState(false);
+  const [autoStatus, setAutoStatus] = useState<AutopilotStatus | null>(null);
+  const [autoBusy, setAutoBusy] = useState(false);
+
   // Load current config when the dialog opens.
   useEffect(() => {
     if (!open) return;
     setLoading(true);
     setTestResult(null);
+    fetch("/api/autopilot", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => setAutoStatus(j.error ? null : j))
+      .catch(() => setAutoStatus(null));
     fetch("/api/youtube/status", { cache: "no-store" })
       .then((r) => r.json())
       .then((j) => setYtStatus(j.error ? null : j))
@@ -145,6 +183,14 @@ export function SettingsDialog({ onConfigChanged }: Props) {
         setYtSecretMasked(cfg.ytSecretMasked);
         setYtConnected(cfg.ytConnected);
         setYtClientSecret("");
+        setUpUser(cfg.upUser ?? "");
+        setUpPlatforms((cfg.upPlatforms ?? "").split(",").filter(Boolean));
+        setHasExistingUpKey(cfg.hasUpKey);
+        setUpKeyMasked(cfg.upKeyMasked ?? "");
+        setUpKey("");
+        setAutoEnabled(!!cfg.autoEnabled);
+        setAutoInterval(cfg.autoIntervalMin || 60);
+        setAutoPublish(!!cfg.autoPublish);
       })
       .catch(() => toast.error("Couldn't load backend config."))
       .finally(() => setLoading(false));
@@ -175,6 +221,12 @@ export function SettingsDialog({ onConfigChanged }: Props) {
           ytClientId,
           ytClientSecret,
           ytPrivacy,
+          upApiKey: upKey,
+          upUser,
+          upPlatforms: upPlatforms.join(","),
+          autoEnabled,
+          autoIntervalMin: autoInterval,
+          autoPublish,
         }),
       });
       if (!res.ok) {
@@ -193,6 +245,10 @@ export function SettingsDialog({ onConfigChanged }: Props) {
       setYtSecretMasked(j.config.ytSecretMasked);
       setYtConnected(j.config.ytConnected);
       setYtClientSecret("");
+      setHasExistingUpKey(j.config.hasUpKey);
+      setUpKeyMasked(j.config.upKeyMasked);
+      setUpKey("");
+      setAutoInterval(j.config.autoIntervalMin);
       toast.success("Backend settings saved.");
       onConfigChanged?.();
     } catch (e) {
@@ -283,6 +339,22 @@ export function SettingsDialog({ onConfigChanged }: Props) {
       toast.error(e instanceof Error ? e.message : "Could not start the sign-in.");
     } finally {
       setYtBusy(false);
+    }
+  };
+
+  /** Kick off one autopilot run now (uses the saved settings). */
+  const handleRunAutopilot = async () => {
+    setAutoBusy(true);
+    try {
+      const res = await fetch("/api/autopilot", { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(j.error || "Couldn't start autopilot.");
+      setAutoStatus(j);
+      toast.success("Autopilot run started — this takes a few minutes.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't start autopilot.");
+    } finally {
+      setAutoBusy(false);
     }
   };
 
@@ -812,6 +884,131 @@ export function SettingsDialog({ onConfigChanged }: Props) {
                         : "No client configured"}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Upload-Post publishing */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Send className="h-4 w-4 text-primary mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Upload-Post (socials)</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Posts a finished stickman MP4 to every account connected on
+                    your Upload-Post profile — TikTok, Instagram, YouTube Shorts and
+                    more — in one call. Get the key at app.upload-post.com → API Keys.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-4 rounded-md border border-border/60 bg-secondary/20 p-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="up-key" className="text-xs">
+                    API key{" "}
+                    {hasExistingUpKey && (
+                      <span className="text-muted-foreground ml-1">(saved: {upKeyMasked})</span>
+                    )}
+                  </Label>
+                  <Input
+                    id="up-key"
+                    type="password"
+                    value={upKey}
+                    onChange={(e) => setUpKey(e.target.value)}
+                    placeholder={hasExistingUpKey ? "•••• leave blank to keep current" : "eyJhbGciOi…"}
+                    className="bg-card font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="up-user" className="text-xs">
+                    Profile (user)
+                  </Label>
+                  <Input
+                    id="up-user"
+                    value={upUser}
+                    onChange={(e) => setUpUser(e.target.value)}
+                    placeholder="joblessjoe"
+                    className="bg-card font-mono text-xs"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Platforms</Label>
+                  <div className="flex flex-wrap gap-x-4 gap-y-2">
+                    {UP_PLATFORM_OPTIONS.map((p) => (
+                      <label key={p} className="flex items-center gap-1.5 text-xs">
+                        <Checkbox
+                          checked={upPlatforms.includes(p)}
+                          onCheckedChange={(on) =>
+                            setUpPlatforms((cur) => (on ? [...cur, p] : cur.filter((x) => x !== p)))
+                          }
+                        />
+                        {p}
+                      </label>
+                    ))}
+                  </div>
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    Platforms not connected on the profile are skipped, not failed.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Autopilot */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Timer className="h-4 w-4 text-primary mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Autopilot</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Joe writes and sings a new story episode on a timer. With
+                    auto-publish on, each one is also filmed to MP4 (25 P&amp;R
+                    credits) and posted through Upload-Post.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-4 rounded-md border border-border/60 bg-secondary/20 p-4">
+                <label className="flex items-center justify-between gap-3 text-xs">
+                  <span>Make a new song automatically</span>
+                  <Switch checked={autoEnabled} onCheckedChange={setAutoEnabled} />
+                </label>
+                <div className="flex items-center justify-between gap-3 text-xs">
+                  <Label htmlFor="auto-int" className="text-xs">
+                    Every (minutes)
+                  </Label>
+                  <Input
+                    id="auto-int"
+                    type="number"
+                    min={15}
+                    max={1440}
+                    value={autoInterval}
+                    onChange={(e) => setAutoInterval(Number(e.target.value) || 60)}
+                    className="h-8 w-24 bg-card text-xs"
+                  />
+                </div>
+                <label className="flex items-center justify-between gap-3 text-xs">
+                  <span>Film MP4 + post to socials</span>
+                  <Switch checked={autoPublish} onCheckedChange={setAutoPublish} />
+                </label>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={handleRunAutopilot} disabled={autoBusy} className="gap-1.5">
+                    {autoBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                    Run once now
+                  </Button>
+                  <span className="ml-auto text-[0.7rem] text-muted-foreground text-right">
+                    {autoStatus?.running
+                      ? `Running: ${autoStatus.step || "starting"}…`
+                      : autoStatus?.lastRunAt
+                        ? `Last run ${new Date(autoStatus.lastRunAt).toLocaleString()}${autoStatus.lastResult ? ` — ${autoStatus.lastResult}` : ""}`
+                        : "Never run"}
+                  </span>
+                </div>
+                {autoEnabled && autoPublish && (
+                  <p className="text-[0.7rem] text-muted-foreground">
+                    ≈ {Math.round((24 * 60) / Math.max(15, autoInterval)) * 25} P&amp;R credits a day at this pace.
+                  </p>
+                )}
               </div>
             </div>
 
