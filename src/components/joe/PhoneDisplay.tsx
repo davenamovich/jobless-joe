@@ -6,6 +6,7 @@ import { usePlayback, effectiveDuration } from "@/lib/playback-store";
 import { durationToSeconds } from "@/lib/walls";
 import { getVoice } from "@/lib/voices";
 import { cn } from "@/lib/utils";
+import { PostToSocials } from "./PostToSocials";
 import { YouTubePreviewDialog } from "@/components/joe/YouTubePreviewDialog";
 
 /**
@@ -684,6 +685,7 @@ export function PhoneDisplay({ episodeId }: { episodeId?: string }) {
                       }}
                     />
                     <div className="absolute right-2 top-2 z-30 flex items-center gap-1.5">
+                      <PostToSocials mp4Url={video.mp4Url} title={track?.episodeTitle || "Jobless Joe"} episodeId={videoEpisodeId ?? undefined} variant="pill" />
                       {video.ytUrl ? (
                         <a
                           href={video.ytUrl}

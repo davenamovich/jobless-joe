@@ -28,6 +28,9 @@ export async function POST(req: NextRequest) {
   const saved = await loadBackendConfig();
 
   const cfg: BackendConfig = {
+    // Everything not about the text model (video, YouTube, Upload-Post,
+    // autopilot) carries through from the saved config.
+    ...saved,
     activeBackend: VALID_BACKENDS.includes(body.activeBackend as BackendKey)
       ? (body.activeBackend as BackendKey)
       : saved.activeBackend,

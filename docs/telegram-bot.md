@@ -44,6 +44,30 @@ bot:  ✍️ Joe is writing a 60s song about…        (edited in place as it go
 | `/language <n>` | `en` |
 | `/settings` | Show all four |
 
+**Posting and autopilot**
+
+| Command | What it does |
+| --- | --- |
+| 📤 *Post to socials* button | Under a finished `/video` MP4: posts it via Upload-Post to every platform enabled in settings (once per MP4) |
+| `/trending [refresh]` | Today's Google Trends + Hacker News stories as song ideas, one 🎙️ button each (cached 1h) |
+| `/autopilot` | Show autopilot status |
+| `/autopilot on [minutes]` | New story-episode song every *n* minutes (default 60, min 15); this chat gets the results |
+| `/autopilot publish on\|off` | Also film each song to MP4 (25 P&R credits) and post it via Upload-Post |
+| `/autopilot now` | One run right away |
+| `/autopilot off` | Stop |
+
+Upload-Post and autopilot are also in the web app's Backend settings. Headless
+deployments can use `UPLOAD_POST_API_KEY`, `UPLOAD_POST_USER`,
+`UPLOAD_POST_PLATFORMS` (comma-separated), `AUTOPILOT=1`,
+`AUTOPILOT_INTERVAL_MIN`, `AUTOPILOT_PUBLISH=1` and `AUTOPILOT_CHAT_ID`. The
+scheduler starts from `src/instrumentation.ts` and keeps its last run time in
+the DB, so a restart doesn't fire an extra song. Runs alternate between a
+trending idea nobody has sung yet and the next story episode.
+
+Every new song is shown the last 12 songs' titles, openers, chorus hooks and
+punchlines as off-limits, plus a random comic angle (setting × device) —
+see `src/lib/freshness.ts`.
+
 Pickers take the list number or the key (`/style 2`, `/style big-band-vegas`).
 "Last song" means the app's most recent song, including ones made in the web UI.
 

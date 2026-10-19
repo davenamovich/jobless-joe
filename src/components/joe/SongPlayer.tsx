@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { StickmanTools } from "./StickmanTools";
+import { PostToSocials } from "./PostToSocials";
 
 interface Props {
   episodeId: string;
@@ -591,12 +592,15 @@ export function SongPlayer({
                     </Button>
                   )}
                   {video.mp4Url ? (
-                    <Button asChild size="sm" variant="outline" className="h-8">
-                      <a href={video.mp4Url} target="_blank" rel="noopener noreferrer">
-                        <Download className="h-3.5 w-3.5 mr-1.5" />
-                        Download MP4
-                      </a>
-                    </Button>
+                    <>
+                      <Button asChild size="sm" variant="outline" className="h-8">
+                        <a href={video.mp4Url} target="_blank" rel="noopener noreferrer">
+                          <Download className="h-3.5 w-3.5 mr-1.5" />
+                          Download MP4
+                        </a>
+                      </Button>
+                      <PostToSocials mp4Url={video.mp4Url} title={title} episodeId={episodeId} />
+                    </>
                   ) : (
                     <Button
                       size="sm"
