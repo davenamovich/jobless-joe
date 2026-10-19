@@ -29,7 +29,7 @@ bot:  ✍️ Joe is writing a 60s song about…        (edited in place as it go
 | `/song <topic>` | Song about that topic right away, no chat |
 | `/newchat` | Joe forgets the chat and what he learned about you |
 | `/lyrics <lyrics>` | Same as pasting lyrics, for shorter ones |
-| `/episode [n]` | List the 16 story episodes, or sing number *n* |
+| `/episode [n]` | List the season's episodes, or sing number *n* |
 | `/next` | Continue the story from the last song |
 | `/funnier` `/sharper` `/attitude` `/ending` | Remix the last song |
 | `/ad` | Turn the last song into a 30-second ad |
