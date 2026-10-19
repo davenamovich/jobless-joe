@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureAudioTrack } from "@/lib/tts-service";
 import { VOICES } from "@/lib/voices";
+import { db } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const maxDuration = 120; // TTS can be slow on long lyrics
@@ -21,9 +22,16 @@ export async function POST(req: NextRequest) {
   if (!body.episodeId) {
     return NextResponse.json({ error: "episodeId is required." }, { status: 400 });
   }
-  const voice = body.voice && VOICES.some((v) => v.key === body.voice)
+  // No explicit voice: use the configured default so a UI retry re-renders the
+  // same track the background job was making (not a second, differently-voiced
+  // one).
+  let voice = body.voice && VOICES.some((v) => v.key === body.voice)
     ? body.voice!
-    : "jam";
+    : "";
+  if (!voice) {
+    const cfg = await db.backendConfig.findUnique({ where: { id: "current" } });
+    voice = cfg?.defaultVoice || "jam";
+  }
 
   const result = await ensureAudioTrack(body.episodeId, voice);
   if (!result.ok) {

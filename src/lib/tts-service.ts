@@ -24,6 +24,14 @@ import {
   estimateChunkDurationSec,
   getVoice,
 } from "@/lib/voices";
+import {
+  ACE_STEP_DEFAULT_MODEL,
+  ACE_STEP_DEFAULT_URL,
+  loadBackendConfig,
+  type BackendConfig,
+} from "@/lib/ai-backend";
+import { buildAceCaption } from "@/lib/crooner-styles";
+import { getLanguage } from "@/lib/languages";
 import type { SongOutput } from "@/lib/joe-prompts";
 
 const AUDIO_DIR = path.join(process.cwd(), "public", "audio");
@@ -36,6 +44,8 @@ export interface GenerateAudioResult {
   durationSec?: number;
   chunkCount?: number;
   voice?: string;
+  /** Which engine produced (or served) this track */
+  engine?: "zai" | "acestep";
   error?: string;
 }
 
@@ -45,31 +55,79 @@ async function ensureAudioDir() {
 }
 
 /**
+ * Renders currently in flight, keyed `episodeId:voice`.
+ *
+ * Music generation is kicked off in the background after /api/generate
+ * responds, so a dev-server reload (or a crash) can drop the job while
+ * ACE-Step itself keeps working. Tracking in-flight renders lets the UI
+ * distinguish "still rendering" from "nothing is rendering — restart it"
+ * instead of spinning forever.
+ */
+const inFlight = new Map<string, Promise<GenerateAudioResult>>();
+
+/** True while a render for this episode is running in *this* process. */
+export function isAudioRendering(episodeId: string): boolean {
+  for (const key of inFlight.keys()) {
+    if (key.startsWith(`${episodeId}:`)) return true;
+  }
+  return false;
+}
+
+/**
  * Generate (or fetch from cache) an audio track for an episode + voice.
+ *
+ * Concurrent calls for the same episode + voice share one render, so a UI
+ * retry can never start a second ACE-Step job.
  *
  * @param episodeId The episode to generate audio for.
  * @param voice Voice key from VOICES.
  * @returns Either an existing AudioTrack or a freshly-generated one.
  */
-export async function ensureAudioTrack(
+export function ensureAudioTrack(
+  episodeId: string,
+  voice: string
+): Promise<GenerateAudioResult> {
+  const key = `${episodeId}:${voice}`;
+  const running = inFlight.get(key);
+  if (running) return running;
+
+  let job: Promise<GenerateAudioResult>;
+  job = runEnsureAudioTrack(episodeId, voice).finally(() => {
+    if (inFlight.get(key) === job) inFlight.delete(key);
+  });
+  inFlight.set(key, job);
+  return job;
+}
+
+async function runEnsureAudioTrack(
   episodeId: string,
   voice: string
 ): Promise<GenerateAudioResult> {
   const voiceDef = getVoice(voice);
+  const cfg = await loadBackendConfig();
+  const engine = cfg.audioEngine;
+  // Z.ai produces WAV (spoken), ACE-Step produces MP3 (sung/music). The format
+  // lets us detect a cached track made by the other engine and regenerate.
+  const expectedFormat = engine === "acestep" ? "mp3" : "wav";
 
   // 1. Look for an existing track.
   const existing = await db.audioTrack.findUnique({
     where: { episodeId_voice: { episodeId, voice } },
   });
   if (existing) {
-    return {
-      ok: true,
-      audioTrackId: existing.id,
-      audioUrl: existing.filePath,
-      durationSec: existing.durationSec,
-      chunkCount: existing.chunkCount,
-      voice: existing.voice,
-    };
+    if (existing.format === expectedFormat) {
+      return {
+        ok: true,
+        audioTrackId: existing.id,
+        audioUrl: existing.filePath,
+        durationSec: existing.durationSec,
+        chunkCount: existing.chunkCount,
+        voice: existing.voice,
+        engine,
+      };
+    }
+    // Made by a different engine — replace it.
+    await db.audioTrack.delete({ where: { id: existing.id } });
   }
 
   // 2. Load the episode + extract lyrics.
@@ -84,8 +142,51 @@ export async function ensureAudioTrack(
     return { ok: false, error: "Episode output is corrupted." };
   }
   const lyrics = output.lyrics?.trim() ?? "";
-  if (!lyrics) {
+  if (!lyrics && engine !== "acestep") {
     return { ok: false, error: "Episode has no lyrics to speak." };
+  }
+
+  // === ACE-Step: render music from the written lyrics + direction. ===
+  if (engine === "acestep") {
+    await ensureAudioDir();
+    let rendered: { buffer: Buffer; format: string; durationSec: number };
+    try {
+      rendered = await generateAceStepAudio(
+        output,
+        episode.duration,
+        cfg,
+        episode.language
+      );
+    } catch (e) {
+      console.error("ACE-Step generation failed", e);
+      return {
+        ok: false,
+        error: `ACE-Step failed: ${e instanceof Error ? e.message : String(e)}`,
+      };
+    }
+    const filename = `ep_${episodeId}_${voice}.${rendered.format}`;
+    await fs.writeFile(path.join(AUDIO_DIR, filename), rendered.buffer);
+    const filePath = `${PUBLIC_PREFIX}/${filename}`;
+    const track = await db.audioTrack.create({
+      data: {
+        episodeId,
+        voice: voiceDef.key,
+        format: rendered.format,
+        speed: 1,
+        durationSec: Math.round(rendered.durationSec),
+        chunkCount: 1,
+        filePath,
+      },
+    });
+    return {
+      ok: true,
+      audioTrackId: track.id,
+      audioUrl: filePath,
+      durationSec: Math.round(rendered.durationSec),
+      chunkCount: 1,
+      voice: track.voice,
+      engine,
+    };
   }
 
   // 3. Split into TTS-sized chunks.
@@ -173,7 +274,180 @@ export async function ensureAudioTrack(
     durationSec: Math.round(totalDurationSec),
     chunkCount: buffers.length,
     voice: voiceDef.key,
+    engine: "zai",
   };
+}
+
+// ---------------- ACE-Step (music generation) ----------------
+
+/** ACE-Step answers a 503 until a DiT model is initialized; init can take ~20s. */
+const ACE_STEP_TIMEOUT_MS = 15 * 60 * 1000;
+
+/** Accept a bare host, http(s) URL, or URL ending in /v1. */
+function aceStepBase(raw: string): string {
+  let url = (raw || ACE_STEP_DEFAULT_URL).trim().replace(/\/+$/, "");
+  url = url.replace(/\/v1$/i, "");
+  if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
+  return url;
+}
+
+/** "acestep/acestep-v15-turbo" -> "acestep-v15-turbo" (what /v1/init expects). */
+function aceStepInitModel(model: string): string {
+  return model.replace(/^[^/]+\//, "").trim();
+}
+
+function aceStepHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    // Free ngrok tunnels can serve an HTML warning page to browser-like clients.
+    "ngrok-skip-browser-warning": "true",
+  };
+  const key = process.env.ACESTEP_API_KEY?.trim();
+  if (key) headers["Authorization"] = `Bearer ${key}`;
+  return headers;
+}
+
+/** "60s" / "60 seconds — ..." -> seconds, clamped to a sane ACE-Step range. */
+function aceStepDurationSec(durationKey: string, label?: string): number {
+  const keyMatch = /^(\d+)s$/.exec(durationKey?.trim() ?? "");
+  const labelMatch = /(\d+)\s*(?:s\b|sec|seconds)/i.exec(label ?? "");
+  const seconds = keyMatch
+    ? Number(keyMatch[1])
+    : labelMatch
+      ? Number(labelMatch[1])
+      : 30;
+  return Math.min(240, Math.max(10, seconds));
+}
+
+interface AceStepChatResponse {
+  choices?: Array<{
+    message?: {
+      content?: string;
+      audio?: Array<{ audio_url?: { url?: string } }>;
+    };
+    finish_reason?: string;
+  }>;
+  error?: { message?: string };
+}
+
+/**
+ * Ask ACE-Step to render Joe's lyrics as an actual song. Returns the decoded
+ * audio buffer; the caller persists it and the AudioTrack row.
+ *
+ * Works against a local server (http://localhost:8001) or an ngrok tunnel.
+ */
+async function generateAceStepAudio(
+  output: SongOutput,
+  durationKey: string,
+  cfg: BackendConfig,
+  language?: string
+): Promise<{ buffer: Buffer; format: string; durationSec: number }> {
+  const base = aceStepBase(cfg.aceStepBaseUrl);
+  const model = cfg.aceStepModel?.trim() || ACE_STEP_DEFAULT_MODEL;
+  const seconds = aceStepDurationSec(durationKey, output.duration);
+  const lyrics = output.lyrics?.trim() ?? "";
+  // Always the same Joe voice brief, with a short episode-specific clause
+  // appended — see ACE_CROONER_STYLE_PROMPT.
+  const caption = buildAceCaption(output);
+
+  const payload = {
+    model,
+    messages: [
+      {
+        role: "user",
+        content: lyrics
+          ? `<prompt>${caption}</prompt><lyrics>${lyrics}</lyrics>`
+          : caption,
+      },
+    ],
+    stream: false,
+    thinking: false,
+    use_format: false,
+    // No lyrics? Let ACE-Step invent everything from the caption.
+    ...(lyrics ? {} : { sample_mode: true }),
+    audio_config: {
+      duration: seconds,
+      format: "mp3",
+      vocal_language: getLanguage(language).ace,
+    },
+  };
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ACE_STEP_TIMEOUT_MS);
+  const headers = aceStepHeaders();
+  const url = `${base}/v1/chat/completions`;
+
+  const send = () =>
+    fetch(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+
+  try {
+    let res = await send();
+
+    // Fresh server: models exist but aren't loaded. Initialize and retry once.
+    if (res.status === 503) {
+      const text = await res.text().catch(() => "");
+      if (!/not initialized/i.test(text)) {
+        throw new Error(`HTTP 503: ${text.slice(0, 300)}`);
+      }
+      const initRes = await fetch(`${base}/v1/init`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ model: aceStepInitModel(model), init_llm: false }),
+        signal: controller.signal,
+      });
+      if (!initRes.ok) {
+        const initText = await initRes.text().catch(() => "");
+        throw new Error(
+          `model init failed (${initRes.status}): ${initText.slice(0, 300)}`
+        );
+      }
+      res = await send();
+    }
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => "");
+      throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
+    }
+
+    const json = (await res.json()) as AceStepChatResponse;
+    if (json.error?.message) throw new Error(json.error.message);
+
+    const choice = json.choices?.[0];
+    if (choice?.finish_reason === "error") {
+      throw new Error(choice.message?.content || "generation failed");
+    }
+
+    const dataUrl = choice?.message?.audio?.[0]?.audio_url?.url;
+    if (!dataUrl || !dataUrl.startsWith("data:")) {
+      const preview = (choice?.message?.content ?? "").slice(0, 200);
+      throw new Error(`no audio in response${preview ? `: ${preview}` : ""}`);
+    }
+
+    const comma = dataUrl.indexOf(",");
+    if (comma === -1) throw new Error("malformed audio data URL");
+    const mime = dataUrl.slice(5, comma).split(";")[0] || "audio/mpeg";
+    const buffer = Buffer.from(dataUrl.slice(comma + 1), "base64");
+    if (buffer.length === 0) throw new Error("decoded audio was empty");
+
+    const format = /wav/i.test(mime)
+      ? "wav"
+      : /flac/i.test(mime)
+        ? "flac"
+        : "mp3";
+    return { buffer, format, durationSec: seconds };
+  } catch (e) {
+    if (e instanceof Error && e.name === "AbortError") {
+      throw new Error("timed out waiting for ACE-Step (15 min)");
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**
@@ -265,7 +539,12 @@ function parseWav(buf: Buffer): ParsedWav {
 export async function getAudioTrack(
   episodeId: string,
   voice: string
-): Promise<{ audioUrl: string; durationSec: number; voice: string } | null> {
+): Promise<{
+  audioUrl: string;
+  durationSec: number;
+  voice: string;
+  format: string;
+} | null> {
   const track = await db.audioTrack.findUnique({
     where: { episodeId_voice: { episodeId, voice } },
   });
@@ -274,5 +553,6 @@ export async function getAudioTrack(
     audioUrl: track.filePath,
     durationSec: track.durationSec,
     voice: track.voice,
+    format: track.format,
   };
 }

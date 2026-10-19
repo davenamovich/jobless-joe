@@ -102,9 +102,9 @@ export const usePlayback = create<PlaybackState>((set, get) => ({
   },
 
   play: () => {
-    const { track, audioUrl } = get();
+    const { track } = get();
     if (!track) return;
-    if (!audioUrl) {
+    if (!track.audioUrl) {
       set({ audioLoading: true, audioError: null });
       return;
     }

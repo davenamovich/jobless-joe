@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { isAudioRendering } from "@/lib/tts-service";
 
 export const runtime = "nodejs";
 
@@ -15,6 +16,9 @@ export async function GET(
   });
   return NextResponse.json({
     episodeId,
+    // True while a render is running in this server process. When it is false
+    // and there is no track, the UI can safely (re)start generation.
+    rendering: isAudioRendering(episodeId),
     tracks: tracks.map((t) => ({
       id: t.id,
       voice: t.voice,
