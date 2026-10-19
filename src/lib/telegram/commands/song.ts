@@ -85,7 +85,12 @@ export const handleAd = remix("thirty-ad");
  */
 async function runAction(msg: TelegramMessage, action: ActionKey) {
   const def = ACTIONS.find((a) => a.key === action);
-  const last = await db.episode.findFirst({ orderBy: { createdAt: "desc" } });
+  // This chat's own last song. Chats from before lastEpisodeId was tracked
+  // fall back to the newest song overall, as before.
+  const own = chatPrefs(msg).lastEpisodeId;
+  const last =
+    (own ? await db.episode.findUnique({ where: { id: own } }) : null) ??
+    (await db.episode.findFirst({ orderBy: { createdAt: "desc" } }));
   if (!last) {
     await say(msg.chat.id, `No song yet — make one first with /song or /episode.`, "send no last song");
     return;
@@ -98,6 +103,7 @@ async function runAction(msg: TelegramMessage, action: ActionKey) {
     topic: last.customTopic ?? undefined,
     script: last.customScript ?? undefined,
     action,
+    episodeId: last.id,
     intro: `${def?.emoji ?? "🎙️"} ${escapeHtml(def?.label ?? action)} — working on <b>${escapeHtml(last.title)}</b>…`,
   });
 }

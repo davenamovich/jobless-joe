@@ -42,6 +42,11 @@ interface GenerateBody {
   croonerStyle?: string;
   language?: string;
   action: ActionKey;
+  /**
+   * The song a refine action (funnier, continue…) works on. Without it the
+   * newest episode in the DB is used, which may be another chat's song.
+   */
+  episodeId?: string;
 }
 
 /** Pull a fresh Story Bible out of the DB (or return the default one). */
@@ -91,16 +96,22 @@ async function saveStoryBible(sb: SongOutput["storyBibleUpdate"], episodeCount: 
   });
 }
 
-/** Find the most recent episode (any action) to use as context for refinements. */
-async function loadLastEpisode(): Promise<{
+/**
+ * The episode a refinement works on: the one asked for, else the most recent.
+ */
+async function loadLastEpisode(episodeId?: string): Promise<{
   title: string;
   lyrics: string;
   closingLine: string;
   nextEpisodeTeaser: string;
 } | null> {
-  const last = await db.episode.findFirst({
-    orderBy: { createdAt: "desc" },
-  });
+  const last =
+    (episodeId
+      ? await db.episode.findUnique({ where: { id: episodeId } })
+      : null) ??
+    (await db.episode.findFirst({
+      orderBy: { createdAt: "desc" },
+    }));
   if (!last) return null;
   try {
     const out: SongOutput = JSON.parse(last.output);
@@ -335,7 +346,7 @@ export async function POST(req: NextRequest) {
 
   const storyBible = await loadStoryBible();
   const previousEpisode =
-    body.action === "generate" ? null : await loadLastEpisode();
+    body.action === "generate" ? null : await loadLastEpisode(body.episodeId);
 
   const systemPrompt = buildSystemPrompt(croonerStyleKey, language);
   const userPrompt = buildUserPrompt({
@@ -494,7 +505,13 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  await saveStoryBible(cleaned.storyBibleUpdate, newEpisodeCount);
+  // Only the series moves the story on. A one-off custom topic or pasted
+  // script (anything a Telegram user types) would otherwise rewrite the shared
+  // Story Bible, and every later song would carry its side plot forward.
+  const updatesSeries = body.episodeKey !== "custom";
+  if (updatesSeries) {
+    await saveStoryBible(cleaned.storyBibleUpdate, newEpisodeCount);
+  }
 
   // === Fire TTS audio generation in the background. ===
   // We don't await this — generation can take 5-30s for a long song, and the
@@ -510,10 +527,9 @@ export async function POST(req: NextRequest) {
     output: cleaned,
     episodeId: createdEpisode.id,
     lyricFit: { ...lyricFit, tightened },
-    storyBible: {
-      ...cleaned.storyBibleUpdate,
-      episodeCount: newEpisodeCount,
-    },
+    storyBible: updatesSeries
+      ? { ...cleaned.storyBibleUpdate, episodeCount: newEpisodeCount }
+      : storyBible,
     backend: usedBackend,
     model: usedModel,
     croonerStyle: croonerStyleKey,
