@@ -26,6 +26,7 @@ import {
 import { CROONER_STYLES } from "@/lib/crooner-styles";
 import { DEFAULT_LANGUAGE, isLanguageKey } from "@/lib/languages";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
+import { digestSong, freshnessBlock, pickAngle, type RecentSong } from "@/lib/freshness";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -112,6 +113,26 @@ async function loadLastEpisode(): Promise<{
   } catch {
     return null;
   }
+}
+
+/** How many recent songs the songwriter is told not to repeat. */
+const RECENT_SONGS = 12;
+
+/** Digest the latest songs (newest first) into what the next one must not reuse. */
+async function loadRecentSongs(take: number): Promise<RecentSong[]> {
+  const rows = await db.episode.findMany({
+    orderBy: { createdAt: "desc" },
+    take,
+    select: { output: true, customTopic: true },
+  });
+  return rows.flatMap((r) => {
+    try {
+      const song = digestSong(JSON.parse(r.output), r.customTopic);
+      return song ? [song] : [];
+    } catch {
+      return [];
+    }
+  });
 }
 
 /**
@@ -335,6 +356,15 @@ export async function POST(req: NextRequest) {
   const previousEpisode =
     body.action === "generate" ? null : await loadLastEpisode();
 
+  // Brand-new songs (generate / continue) get a comic angle; remixes rewrite
+  // the latest song, so that one is left off the do-not-reuse list.
+  const isNewSong = body.action === "generate" || body.action === "continue";
+  const recentSongs = await loadRecentSongs(RECENT_SONGS + (isNewSong ? 0 : 1));
+  const freshness = freshnessBlock(
+    isNewSong ? recentSongs : recentSongs.slice(1),
+    isNewSong ? pickAngle() : null
+  );
+
   const systemPrompt = buildSystemPrompt(croonerStyleKey, language);
   const userPrompt = buildUserPrompt({
     episodeKey: body.episodeKey,
@@ -349,6 +379,7 @@ export async function POST(req: NextRequest) {
     action: body.action,
     storyBible,
     previousEpisode,
+    freshness,
   });
 
   // === Pick the AI backend (Z.ai default, or OpenAI-compatible for local /

@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Download, ExternalLink, Film, Loader2, Smile, Video } from "lucide-react";
 import { toast } from "sonner";
+import { PostToSocials } from "./PostToSocials";
 
 interface Meme {
   top: string;
@@ -209,12 +210,15 @@ export function StickmanTools({ episodeId, title }: Props) {
                 </a>
               </Button>
               {mp4Url ? (
-                <Button asChild size="sm" variant="secondary" className="h-9">
-                  <a href={mp4Url} target="_blank" rel="noopener noreferrer">
-                    <Download className="h-3.5 w-3.5 mr-1.5" />
-                    Download MP4
-                  </a>
-                </Button>
+                <>
+                  <Button asChild size="sm" variant="secondary" className="h-9">
+                    <a href={mp4Url} target="_blank" rel="noopener noreferrer">
+                      <Download className="h-3.5 w-3.5 mr-1.5" />
+                      Download MP4
+                    </a>
+                  </Button>
+                  <PostToSocials mp4Url={mp4Url} title={title} episodeId={episodeId} className="h-9" />
+                </>
               ) : (
                 <Button size="sm" variant="secondary" className="h-9" onClick={makeMp4} disabled={mp4State === "rendering"}>
                   {mp4State === "rendering" ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Film className="h-3.5 w-3.5 mr-1.5" />}

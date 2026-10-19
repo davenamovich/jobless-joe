@@ -135,7 +135,7 @@ function packFrames(row: VideoJobRow): string[] {
 }
 
 /** Append the referral code to a link unless it already has one. */
-function withRef(url: string, ref: string): string {
+export function withRef(url: string, ref: string): string {
   if (!url || !ref || /[?&]ref=/.test(url)) return url;
   return `${url}${url.includes("?") ? "&" : "?"}ref=${encodeURIComponent(ref)}`;
 }
