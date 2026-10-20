@@ -22,7 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
-import { MorningShow } from "./MorningShow";
+import { MorningShow, type MorningShowResult } from "./MorningShow";
 import { PostToSocials } from "./PostToSocials";
 
 const PLACEHOLDER = `Plain lines are Joe's monologue.
@@ -46,6 +46,11 @@ export function SitdownWithJoe({ className }: { className?: string }) {
   );
   const [mp4Error, setMp4Error] = useState("");
   const [tab, setTab] = useState("script");
+  // Search questions + YouTube copy from the Morning Show, sent when posting.
+  const [seo, setSeo] = useState<Pick<
+    MorningShowResult,
+    "questions" | "youtube"
+  > | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -195,9 +200,13 @@ export function SitdownWithJoe({ className }: { className?: string }) {
         </TabsList>
         <TabsContent value="morning" className="mt-3">
           <MorningShow
-            onScript={(t, s) => {
-              setTitle(t);
-              setScript(s);
+            onScript={(show) => {
+              setTitle(show.title);
+              setScript(show.script);
+              setSeo({
+                questions: show.questions ?? [],
+                youtube: show.youtube,
+              });
               setAudio(null);
               if (fileRef.current) fileRef.current.value = "";
               setTab("script");
@@ -289,6 +298,31 @@ export function SitdownWithJoe({ className }: { className?: string }) {
                   : "Make preview"}
             </Button>
           </div>
+          {seo && (
+            <div className="rounded-md border border-border/60 bg-secondary/20 p-2.5 text-xs space-y-1.5">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold">Search questions Joe answers</p>
+                <button
+                  type="button"
+                  className="text-[0.7rem] text-muted-foreground underline"
+                  onClick={() => setSeo(null)}
+                >
+                  Don&apos;t use
+                </button>
+              </div>
+              {seo.questions.length > 0 && (
+                <ul className="list-disc pl-4 text-muted-foreground">
+                  {seo.questions.map((q) => (
+                    <li key={q}>{q}</li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-[0.7rem] text-muted-foreground">
+                Posting sends YouTube this title, a description listing these
+                questions, and {seo.youtube.tags.length} search tags.
+              </p>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
 
@@ -312,6 +346,14 @@ export function SitdownWithJoe({ className }: { className?: string }) {
                 <PostToSocials
                   mp4Url={mp4Url}
                   title={shownTitle}
+                  youtube={
+                    seo
+                      ? {
+                          ...seo.youtube,
+                          title: title.trim() || seo.youtube.title,
+                        }
+                      : undefined
+                  }
                   className="h-9"
                 />
               </>
