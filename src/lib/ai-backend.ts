@@ -70,6 +70,11 @@ export interface BackendConfig {
   autoPublish: boolean;
   /** Telegram chat that hears about autopilot runs */
   autoChatId: string;
+
+  /** Fish Audio TTS for the sit-down videos (key + voice model ids) */
+  fishApiKey: string;
+  fishJoeVoiceId: string;
+  fishGuestVoiceId: string;
 }
 
 export const UP_DEFAULT_PLATFORMS = "tiktok,instagram,youtube";
@@ -114,6 +119,9 @@ const DEFAULT_CONFIG: BackendConfig = {
   autoIntervalMin: AUTO_DEFAULT_INTERVAL_MIN,
   autoPublish: false,
   autoChatId: "",
+  fishApiKey: "",
+  fishJoeVoiceId: "",
+  fishGuestVoiceId: "",
 };
 
 /** Upload-Post + autopilot fields from env (headless deployments). */
@@ -154,6 +162,9 @@ function envDefaults(): BackendConfig {
     ytChannelTitle: "",
     ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
     ...envPublishing(),
+    fishApiKey: process.env.FISH_AUDIO_API_KEY ?? "",
+    fishJoeVoiceId: process.env.FISH_JOE_VOICE_ID ?? "",
+    fishGuestVoiceId: process.env.FISH_GUEST_VOICE_ID ?? "",
   };
 }
 
@@ -194,6 +205,9 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
         autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
         autoPublish: !!row.autoPublish,
         autoChatId: row.autoChatId || "",
+        fishApiKey: row.fishApiKey || process.env.FISH_AUDIO_API_KEY || "",
+        fishJoeVoiceId: row.fishJoeVoiceId || process.env.FISH_JOE_VOICE_ID || "",
+        fishGuestVoiceId: row.fishGuestVoiceId || process.env.FISH_GUEST_VOICE_ID || "",
       };
     } else {
       cfg = envDefaults();
@@ -250,6 +264,9 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       autoIntervalMin: cfg.autoIntervalMin,
       autoPublish: cfg.autoPublish,
       autoChatId: cfg.autoChatId,
+      fishApiKey: cfg.fishApiKey,
+      fishJoeVoiceId: cfg.fishJoeVoiceId,
+      fishGuestVoiceId: cfg.fishGuestVoiceId,
     },
     update: {
       activeBackend: cfg.activeBackend,
@@ -277,6 +294,9 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       autoIntervalMin: cfg.autoIntervalMin,
       autoPublish: cfg.autoPublish,
       autoChatId: cfg.autoChatId,
+      fishApiKey: cfg.fishApiKey,
+      fishJoeVoiceId: cfg.fishJoeVoiceId,
+      fishGuestVoiceId: cfg.fishGuestVoiceId,
     },
   });
 }

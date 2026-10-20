@@ -223,6 +223,13 @@ model BackendConfig {
   /// Telegram chat that hears about each autopilot run (set by /autopilot on)
   autoChatId      String   @default("")
   autoLastRunAt   DateTime?
+
+  /// Fish Audio API key (Authorization: Bearer ...) for sit-down voices
+  fishApiKey       String  @default("")
+  /// Fish Audio voice model id (reference_id) for Joe; empty = Fish default
+  fishJoeVoiceId   String  @default("")
+  /// Fish Audio voice model id for the sit-down guest
+  fishGuestVoiceId String  @default("")
 }
 
 /// A Plunder & Riffle video made from an episode's song.

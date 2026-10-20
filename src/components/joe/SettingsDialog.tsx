@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   Clapperboard,
   Loader2,
+  Mic,
   Send,
   Settings2,
   Timer,
@@ -54,6 +55,10 @@ interface BackendConfigResponse {
   upPlatforms: string;
   hasUpKey: boolean;
   upKeyMasked: string;
+  hasFishKey: boolean;
+  fishKeyMasked: string;
+  fishJoeVoiceId: string;
+  fishGuestVoiceId: string;
   autoEnabled: boolean;
   autoIntervalMin: number;
   autoPublish: boolean;
@@ -136,6 +141,13 @@ export function SettingsDialog({ onConfigChanged }: Props) {
   const [hasExistingUpKey, setHasExistingUpKey] = useState(false);
   const [upKeyMasked, setUpKeyMasked] = useState("");
 
+  // Fish Audio (sit-down voices)
+  const [fishKey, setFishKey] = useState("");
+  const [hasExistingFishKey, setHasExistingFishKey] = useState(false);
+  const [fishKeyMasked, setFishKeyMasked] = useState("");
+  const [fishJoeVoice, setFishJoeVoice] = useState("");
+  const [fishGuestVoice, setFishGuestVoice] = useState("");
+
   // Autopilot
   const [autoEnabled, setAutoEnabled] = useState(false);
   const [autoInterval, setAutoInterval] = useState(60);
@@ -188,6 +200,11 @@ export function SettingsDialog({ onConfigChanged }: Props) {
         setHasExistingUpKey(cfg.hasUpKey);
         setUpKeyMasked(cfg.upKeyMasked ?? "");
         setUpKey("");
+        setHasExistingFishKey(!!cfg.hasFishKey);
+        setFishKeyMasked(cfg.fishKeyMasked ?? "");
+        setFishJoeVoice(cfg.fishJoeVoiceId ?? "");
+        setFishGuestVoice(cfg.fishGuestVoiceId ?? "");
+        setFishKey("");
         setAutoEnabled(!!cfg.autoEnabled);
         setAutoInterval(cfg.autoIntervalMin || 60);
         setAutoPublish(!!cfg.autoPublish);
@@ -224,6 +241,9 @@ export function SettingsDialog({ onConfigChanged }: Props) {
           upApiKey: upKey,
           upUser,
           upPlatforms: upPlatforms.join(","),
+          fishApiKey: fishKey,
+          fishJoeVoiceId: fishJoeVoice,
+          fishGuestVoiceId: fishGuestVoice,
           autoEnabled,
           autoIntervalMin: autoInterval,
           autoPublish,
@@ -248,6 +268,9 @@ export function SettingsDialog({ onConfigChanged }: Props) {
       setHasExistingUpKey(j.config.hasUpKey);
       setUpKeyMasked(j.config.upKeyMasked);
       setUpKey("");
+      setHasExistingFishKey(j.config.hasFishKey);
+      setFishKeyMasked(j.config.fishKeyMasked);
+      setFishKey("");
       setAutoInterval(j.config.autoIntervalMin);
       toast.success("Backend settings saved.");
       onConfigChanged?.();
@@ -949,6 +972,67 @@ export function SettingsDialog({ onConfigChanged }: Props) {
                   <p className="text-[0.7rem] text-muted-foreground">
                     Platforms not connected on the profile are skipped, not failed.
                   </p>
+                </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Fish Audio voices for Sit-down with Joe */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Mic className="h-4 w-4 text-primary mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Fish Audio (sit-down voices)</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Voices a Sit-down with Joe script when you don&apos;t upload audio. Get the key at
+                    fish.audio → API Keys. Voice IDs are the model IDs from a voice&apos;s page on
+                    fish.audio (the part after /m/); leave one blank for Fish&apos;s default voice.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-4 rounded-md border border-border/60 bg-secondary/20 p-4">
+                <div className="space-y-1.5">
+                  <Label htmlFor="fish-key" className="text-xs">
+                    API key{" "}
+                    {hasExistingFishKey && (
+                      <span className="text-muted-foreground ml-1">(saved: {fishKeyMasked})</span>
+                    )}
+                  </Label>
+                  <Input
+                    id="fish-key"
+                    type="password"
+                    value={fishKey}
+                    onChange={(e) => setFishKey(e.target.value)}
+                    placeholder={hasExistingFishKey ? "•••• leave blank to keep current" : "Fish Audio API key"}
+                    className="bg-card font-mono text-xs"
+                  />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="fish-joe" className="text-xs">
+                      Joe&apos;s voice ID
+                    </Label>
+                    <Input
+                      id="fish-joe"
+                      value={fishJoeVoice}
+                      onChange={(e) => setFishJoeVoice(e.target.value)}
+                      placeholder="e.g. 7f92f8afb8ec43bf81429cc1c9199cb1"
+                      className="bg-card font-mono text-xs"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="fish-guest" className="text-xs">
+                      Guest&apos;s voice ID
+                    </Label>
+                    <Input
+                      id="fish-guest"
+                      value={fishGuestVoice}
+                      onChange={(e) => setFishGuestVoice(e.target.value)}
+                      placeholder="optional"
+                      className="bg-card font-mono text-xs"
+                    />
+                  </div>
                 </div>
               </div>
             </div>
