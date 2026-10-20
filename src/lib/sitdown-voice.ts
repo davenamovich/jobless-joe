@@ -1,8 +1,9 @@
 /**
  * Voices a sit-down script when no audio file was uploaded: Joe in his voice,
  * the guest in another, joined into one WAV with a short pause between clips.
- * Fish Audio speaks a whole turn per call so Joe keeps one voice; the other
- * engines have fixed named voices and speak line by line.
+ * Fish Audio speaks a whole turn per call so Joe keeps one voice, and acts
+ * out the script's expression tags; the other engines have fixed named
+ * voices, speak line by line and skip the tags.
  *
  * Engine: Fish Audio when a key is saved in Settings (Joe and the guest each
  * get their own voice model), else the OpenAI-compatible backend's
@@ -136,25 +137,38 @@ export function wavPcm(buf: Buffer): { fmt: Fmt; data: Buffer } {
   return { fmt, data: data.subarray(0, data.length - (data.length % fmt.blockAlign)) };
 }
 
+/**
+ * Fish's expressive model reads the script's tags ([excited], [laugh],
+ * <whisper>…</whisper>). If the account can't use it, fall back to s1 with
+ * the tags taken out so they aren't read aloud.
+ */
+const FISH_MODELS = ["drama-3", "s1"] as const;
+
 async function speakFish(cfg: BackendConfig, turn: SitdownLine[]): Promise<{ fmt: Fmt; data: Buffer }> {
   const voice = (turn[0].speaker === "joe" ? cfg.fishJoeVoiceId : cfg.fishGuestVoiceId).trim();
-  const res = await fetch(FISH_TTS_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${cfg.fishApiKey.trim()}`,
-      model: "s1",
-    },
-    body: JSON.stringify({
-      text: turn.map((l) => l.text).join("\n"),
-      format: "wav",
-      sample_rate: FISH_SAMPLE_RATE,
-      normalize: true,
-      ...(voice ? { reference_id: voice } : {}),
-    }),
-  });
-  if (!res.ok) throw new Error(`Fish Audio ${res.status}: ${(await res.text()).slice(0, 160)}`);
-  return wavPcm(Buffer.from(await res.arrayBuffer()));
+  let lastError = "";
+  for (const model of FISH_MODELS) {
+    const res = await fetch(FISH_TTS_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${cfg.fishApiKey.trim()}`,
+        model,
+      },
+      body: JSON.stringify({
+        text: turn.map((l) => (model === "s1" ? l.text : l.spoken)).join("\n"),
+        format: "wav",
+        sample_rate: FISH_SAMPLE_RATE,
+        normalize: true,
+        ...(voice ? { reference_id: voice } : {}),
+      }),
+    });
+    if (res.ok) return wavPcm(Buffer.from(await res.arrayBuffer()));
+    lastError = `Fish Audio ${res.status}: ${(await res.text()).slice(0, 160)}`;
+    // Only a rejected model is worth retrying; a bad key or no credit isn't.
+    if (res.status === 401 || res.status === 402) break;
+  }
+  throw new Error(lastError);
 }
 
 async function speakOpenAI(cfg: BackendConfig, line: SitdownLine): Promise<Buffer> {
