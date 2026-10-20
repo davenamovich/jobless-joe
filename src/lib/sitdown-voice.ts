@@ -1,8 +1,8 @@
 /**
- * Voices a sit-down script when no audio file was uploaded: each line is
- * spoken separately (Joe in his voice, the guest in another), then joined
- * into one WAV with a short pause between lines. Because every line is its
- * own clip, the page gets each caption's exact start time.
+ * Voices a sit-down script when no audio file was uploaded: Joe in his voice,
+ * the guest in another, joined into one WAV with a short pause between clips.
+ * Fish Audio speaks a whole turn per call so Joe keeps one voice; the other
+ * engines have fixed named voices and speak line by line.
  *
  * Engine: Fish Audio when a key is saved in Settings (Joe and the guest each
  * get their own voice model), else the OpenAI-compatible backend's
@@ -60,6 +60,53 @@ export function joinClips(clips: Buffer[], fmt: Fmt): VoicedSitdown {
   return { wav: pcmToWav(pcm, fmt), startsMs, durationSec: pcm.length / fmt.byteRate };
 }
 
+/**
+ * Fish Audio voices a whole turn (one speaker's consecutive lines) per call:
+ * separate calls drift to a different-sounding voice, especially without a
+ * saved voice ID. Long turns are split at line boundaries.
+ */
+const FISH_TURN_CHARS = 1500;
+
+export function turnsOf(lines: SitdownLine[], maxChars = FISH_TURN_CHARS): SitdownLine[][] {
+  const turns: SitdownLine[][] = [];
+  let cur: SitdownLine[] = [];
+  let len = 0;
+  for (const line of lines) {
+    const sameSpeaker = cur.length > 0 && cur[0].speaker === line.speaker;
+    if (!sameSpeaker || len + line.text.length + 1 > maxChars) {
+      if (cur.length) turns.push(cur);
+      cur = [];
+      len = 0;
+    }
+    cur.push(line);
+    len += line.text.length + 1;
+  }
+  if (cur.length) turns.push(cur);
+  return turns;
+}
+
+/**
+ * Join per-turn clips with a pause after each. Inside a turn, each line's
+ * start is estimated from its share of the turn's characters.
+ */
+export function joinTurns(turns: { pcm: Buffer; lines: string[] }[], fmt: Fmt): VoicedSitdown {
+  const joined = joinClips(
+    turns.map((t) => t.pcm),
+    fmt,
+  );
+  const startsMs: number[] = [];
+  turns.forEach((t, i) => {
+    const turnMs = (t.pcm.length / fmt.byteRate) * 1000;
+    const total = t.lines.reduce((n, l) => n + l.length + 1, 0) || 1;
+    let before = 0;
+    for (const l of t.lines) {
+      startsMs.push(Math.round(joined.startsMs[i] + (before / total) * turnMs));
+      before += l.length + 1;
+    }
+  });
+  return { ...joined, startsMs };
+}
+
 const FISH_TTS_URL = "https://api.fish.audio/v1/tts";
 const FISH_SAMPLE_RATE = 44100;
 
@@ -89,8 +136,8 @@ export function wavPcm(buf: Buffer): { fmt: Fmt; data: Buffer } {
   return { fmt, data: data.subarray(0, data.length - (data.length % fmt.blockAlign)) };
 }
 
-async function speakFish(cfg: BackendConfig, line: SitdownLine): Promise<{ fmt: Fmt; data: Buffer }> {
-  const voice = (line.speaker === "joe" ? cfg.fishJoeVoiceId : cfg.fishGuestVoiceId).trim();
+async function speakFish(cfg: BackendConfig, turn: SitdownLine[]): Promise<{ fmt: Fmt; data: Buffer }> {
+  const voice = (turn[0].speaker === "joe" ? cfg.fishJoeVoiceId : cfg.fishGuestVoiceId).trim();
   const res = await fetch(FISH_TTS_URL, {
     method: "POST",
     headers: {
@@ -99,7 +146,7 @@ async function speakFish(cfg: BackendConfig, line: SitdownLine): Promise<{ fmt: 
       model: "s1",
     },
     body: JSON.stringify({
-      text: line.text,
+      text: turn.map((l) => l.text).join("\n"),
       format: "wav",
       sample_rate: FISH_SAMPLE_RATE,
       normalize: true,
@@ -131,14 +178,14 @@ export async function voiceSitdown(lines: SitdownLine[]): Promise<VoicedSitdown>
   const cfg = await loadBackendConfig();
   try {
     if (cfg.fishApiKey.trim()) {
-      const clips: Buffer[] = [];
+      const clips: { pcm: Buffer; lines: string[] }[] = [];
       let fmt: Fmt | null = null;
-      for (const line of lines) {
-        const clip = await speakFish(cfg, line);
+      for (const turn of turnsOf(lines)) {
+        const clip = await speakFish(cfg, turn);
         fmt = fmt ?? clip.fmt;
-        clips.push(clip.data);
+        clips.push({ pcm: clip.data, lines: turn.map((l) => l.text) });
       }
-      return joinClips(clips, fmt!);
+      return joinTurns(clips, fmt!);
     }
     if (cfg.activeBackend === "openai-compat" && cfg.openaiBaseUrl.trim() && cfg.openaiApiKey.trim()) {
       const clips: Buffer[] = [];
