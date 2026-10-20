@@ -110,36 +110,83 @@ export const CROONER_STYLES: CroonerStyle[] = [
  * Edit with care — this is Joe's actual voice, not a suggestion.
  */
 export const ACE_CROONER_STYLE_PROMPT =
-  "Classic vintage crooner vocals, smooth and confident male baritone, old-school lounge singer charm, Sinatra-inspired phrasing, rich warm tone, playful comedic delivery, dramatic pauses, subtle swing, jazzy piano, upright bass, brushed drums, muted trumpet, and lush orchestral strings. Timeless 1950s nightclub atmosphere with modern, witty storytelling. Clear vocals front and center, expressive phrasing, memorable melodic hooks, and a charismatic storyteller vibe. Build the emotion and humor as the story unfolds, ending with a strong, catchy punchline.";
+  "Solo male lead vocal: Jobless Joe, a classic vintage crooner with a smooth and confident male baritone, old-school lounge singer charm, Sinatra-inspired phrasing, rich warm tone, playful comedic delivery, dramatic pauses, subtle swing, jazzy piano, upright bass, brushed drums, muted trumpet, and lush orchestral strings. Timeless 1950s nightclub atmosphere with modern, witty storytelling. Clear male vocals front and center, expressive phrasing, and a charismatic storyteller vibe. An instantly hummable hook in the first ten seconds and a big singalong chorus that repeats the song title. Build the emotion and humor as the story unfolds, ending with a strong, catchy punchline. Clean, definitive ending: right after the last sung line the band lands one final sustained chord with a tight button ending; no fade-out, no abrupt cut-off, no trailing instrumental.";
+
+/** Added to the caption on duet episodes. Joe stays the lead. */
+export const ACE_DUET_PROMPT =
+  "Duet: a sultry female guest vocalist answers Joe on one verse and joins him in harmony on the final chorus; Joe stays the lead singer.";
 
 /** ACE-Step caption budget (characters). */
 const ACE_CAPTION_LIMIT = 2000;
 /** How much of the episode's musical direction we append after the fixed voice. */
 const EPISODE_DETAILS_MAX = 400;
+/** Roughly one song in five is a duet. */
+const DUET_EVERY = 5;
+
+/** Sentences in an episode's direction that would hand the lead to a woman. */
+const FEMALE_LEAD = /\b(female|woman|women|girl|soprano|mezzo|diva|chanteuse|her voice)\b/i;
+
+/**
+ * Whether this episode is one of Joe's occasional duets. Stable per episode,
+ * so re-rendering a song never flips it between solo and duet.
+ */
+export function isDuetEpisode(episodeId: string): boolean {
+  let h = 0;
+  for (let i = 0; i < episodeId.length; i++) h = (h * 31 + episodeId.charCodeAt(i)) >>> 0;
+  return h % DUET_EVERY === 0;
+}
+
+/**
+ * Mark the duet parts in the lyrics' section tags so ACE-Step knows who sings
+ * what: the last verse after the first goes to the guest, the last chorus is
+ * sung together. Lyrics without those sections come back unchanged.
+ */
+export function markDuetLyrics(lyrics: string): string {
+  const tags = [...lyrics.matchAll(/\[(VERSE[^\]]*|CHORUS[^\]]*)\]/gi)];
+  const verses = tags.filter((m) => /^VERSE/i.test(m[1]));
+  const choruses = tags.filter((m) => /^CHORUS/i.test(m[1]));
+  const marks = new Map<number, string>();
+  if (verses.length > 1) marks.set(verses[verses.length - 1].index!, "female guest vocal");
+  if (choruses.length) marks.set(choruses[choruses.length - 1].index!, "duet, both voices");
+  let out = lyrics;
+  [...marks.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .forEach(([at, mark]) => {
+      const close = out.indexOf("]", at);
+      out = `${out.slice(0, close)} - ${mark}${out.slice(close)}`;
+    });
+  return out;
+}
 
 /**
  * Build the ACE-Step caption: the fixed Joe voice prompt, then a short
  * "this episode" clause for tempo / instrumentation.
  *
  * The fixed prompt always comes first and is never truncated, so a verbose
- * episode direction can't dilute or overwrite Joe's voice.
+ * episode direction can't dilute or overwrite Joe's voice. On solo songs any
+ * direction that would give the lead to a female singer is dropped; on duets
+ * the duet line is added.
  */
-export function buildAceCaption(output: {
-  musicalDirection?: string;
-  performanceNotes?: string;
-}): string {
+export function buildAceCaption(
+  output: {
+    musicalDirection?: string;
+    performanceNotes?: string;
+  },
+  opts: { duet?: boolean } = {}
+): string {
   const details = [output.musicalDirection, output.performanceNotes]
     .filter(Boolean)
     .join(" ")
     .replace(/\s+/g, " ")
     .trim()
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => opts.duet || !FEMALE_LEAD.test(sentence))
+    .join(" ")
     .slice(0, EPISODE_DETAILS_MAX);
 
-  if (!details) return ACE_CROONER_STYLE_PROMPT;
-  return `${ACE_CROONER_STYLE_PROMPT} This episode: ${details}`.slice(
-    0,
-    ACE_CAPTION_LIMIT
-  );
+  const voice = opts.duet ? `${ACE_CROONER_STYLE_PROMPT} ${ACE_DUET_PROMPT}` : ACE_CROONER_STYLE_PROMPT;
+  if (!details) return voice;
+  return `${voice} This episode: ${details}`.slice(0, ACE_CAPTION_LIMIT);
 }
 
 export function getCroonerStyle(key: string | undefined | null): CroonerStyle {
