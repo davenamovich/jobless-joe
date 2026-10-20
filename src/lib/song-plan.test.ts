@@ -78,6 +78,23 @@ Laid off by email, so I asked AI to write back.`;
     assert.match(buildSenseEditPrompt({ lyrics: nonsense, plan: null }), /look suspicious[\s\S]*The potluck is now court/);
   });
 
+  it("flags Joe talking about himself in the third person, and names the weather-report problem", () => {
+    const weather = `[INTRO]
+My layoff email said, "The Team has decided."
+Joe's job is a weather emergency.
+At my friend's food truck, I grabbed the chalk.
+
+[CHORUS]
+One salary cloud hides the pay.
+I'm Jobless Joe and I'm still here.
+Hey Joe, the rent is due.`;
+    assert.deepEqual(flagSuspectLines(weather), ["Joe's job is a weather emergency."]);
+    const prompt = buildSenseEditPrompt({ lyrics: weather, plan: null });
+    assert.match(prompt, /nobody explained/);
+    assert.match(prompt, /third person/);
+    assert.match(prompt, /weather report/);
+  });
+
   it("applies fixes line by line, ignoring case and punctuation", () => {
     const fixes = parseLineFixes(
       '```json\n{"fixes":[{"line":"the potluck is now court — my aunt bangs a spoon like a gavel","fix":"At the family potluck my aunt asks how the job is going."},{"line":"[CHORUS]","fix":"x"},{"line":"not in the song","fix":"y"}]}\n```',
