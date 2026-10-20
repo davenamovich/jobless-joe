@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { publishFiles } from "@/lib/herenow";
 import { audioDurationSec, loadSongArtifacts } from "@/lib/song-artifacts";
+import { planSongScenes } from "@/lib/stickman-scene-llm";
 import { buildStickmanVideoHtml } from "@/lib/stickman-video";
 
 export const runtime = "nodejs";
@@ -25,7 +26,9 @@ export async function GET(req: NextRequest) {
   }
   try {
     const song = await loadSongArtifacts(episodeId);
+    const { scenes } = await planSongScenes(song.lyrics, song.title);
     const html = buildStickmanVideoHtml({
+      scenes,
       title: song.title,
       episodeLabel: song.episodeLabel,
       lyrics: song.lyrics,
@@ -57,7 +60,9 @@ export async function POST(req: NextRequest) {
   try {
     const song = await loadSongArtifacts(body.episodeId);
     const audioPath = `song.${song.format}`;
+    const { scenes } = await planSongScenes(song.lyrics, song.title);
     const html = buildStickmanVideoHtml({
+      scenes,
       title: song.title,
       episodeLabel: song.episodeLabel,
       lyrics: song.lyrics,
