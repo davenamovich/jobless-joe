@@ -12,22 +12,22 @@ export const maxDuration = 120;
 
 const SOURCES: LetterSource[] = ["reddit", "madeup", "mix"];
 
-/** GET /api/evening-show?count=4&source=mix — tonight's viewer letters. */
+/** GET /api/evening-show?count=4&source=mix&language=es — tonight's viewer letters. */
 export async function GET(req: NextRequest) {
   const params = new URL(req.url).searchParams;
   const source = (SOURCES as string[]).includes(params.get("source") ?? "")
     ? (params.get("source") as LetterSource)
     : "mix";
   try {
-    return NextResponse.json({ ok: true, letters: await getViewerLetters(clampLetters(params.get("count") ?? 4), source) });
+    return NextResponse.json({ ok: true, letters: await getViewerLetters(clampLetters(params.get("count") ?? 4), source, params.get("language") ?? undefined) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
   }
 }
 
-/** POST /api/evening-show { letters } — Joe's show answering them. */
+/** POST /api/evening-show { letters, language } — Joe's show answering them. */
 export async function POST(req: NextRequest) {
-  const body = (await req.json().catch(() => ({}))) as { letters?: ViewerLetter[] };
+  const body = (await req.json().catch(() => ({}))) as { letters?: ViewerLetter[]; language?: unknown };
   const letters = (Array.isArray(body.letters) ? body.letters : [])
     .filter((l) => l && typeof l.question === "string" && l.question.trim())
     .slice(0, 6)
@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     }));
   if (!letters.length) return NextResponse.json({ error: "Pick at least one letter." }, { status: 400 });
   try {
-    return NextResponse.json({ ok: true, ...(await writeEveningShow(letters)) });
+    return NextResponse.json({ ok: true, ...(await writeEveningShow(letters, typeof body.language === "string" ? body.language : undefined)) });
   } catch (e) {
     return NextResponse.json({ error: e instanceof Error ? e.message : String(e) }, { status: 502 });
   }

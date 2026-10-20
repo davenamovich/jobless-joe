@@ -24,8 +24,10 @@ export interface MorningShowResult {
 
 export function MorningShow({
   onScript,
+  language,
 }: {
   onScript: (show: MorningShowResult) => void;
+  language: string;
 }) {
   const [count, setCount] = useState(5);
   const [posts, setPosts] = useState<MorningPost[]>([]);
@@ -61,7 +63,7 @@ export function MorningShow({
       const res = await fetch("/api/morning-show", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ posts: chosen }),
+        body: JSON.stringify({ posts: chosen, language }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok)
