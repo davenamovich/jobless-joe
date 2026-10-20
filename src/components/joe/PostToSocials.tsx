@@ -31,11 +31,13 @@ interface Props {
   title: string;
   /** Lets the server send this song's YouTube SEO title/description/tags. */
   episodeId?: string;
+  /** YouTube copy for a video without an episode (e.g. the Morning Show). */
+  youtube?: { title: string; description: string; tags: string[] };
   variant?: "button" | "pill";
   className?: string;
 }
 
-export function PostToSocials({ mp4Url, title, episodeId, variant = "button", className = "" }: Props) {
+export function PostToSocials({ mp4Url, title, episodeId, youtube, variant = "button", className = "" }: Props) {
   const [posting, setPosting] = useState(false);
   const [results, setResults] = useState<PostResult[]>([]);
   const [status, setStatus] = useState("");
@@ -73,7 +75,7 @@ export function PostToSocials({ mp4Url, title, episodeId, variant = "button", cl
       const res = await fetch("/api/upload-post", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mp4Url, title, episodeId }),
+        body: JSON.stringify({ mp4Url, title, episodeId, youtube }),
       });
       const out = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(out.error || `Request failed (${res.status}).`);

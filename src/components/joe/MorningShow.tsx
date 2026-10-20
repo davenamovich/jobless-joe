@@ -1,8 +1,9 @@
 "use client";
 
 // "Morning Show": pull the morning's top posts about work, jobs and AI, keep
-// the ones worth a joke, and have Joe write a desk monologue about them. The
-// monologue lands in the Sit-down editor, ready to voice and film.
+// the ones worth a joke, and have Joe answer the search question behind each
+// one. The monologue and its search-led YouTube copy land in the Sit-down
+// editor, ready to voice, film and post.
 
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -12,10 +13,18 @@ import type { MorningPost } from "@/lib/morning-show";
 
 const COUNTS = [3, 5, 7, 10];
 
+export interface MorningShowResult {
+  title: string;
+  script: string;
+  /** The search question each segment answers. */
+  questions: string[];
+  youtube: { title: string; description: string; tags: string[] };
+}
+
 export function MorningShow({
   onScript,
 }: {
-  onScript: (title: string, script: string) => void;
+  onScript: (show: MorningShowResult) => void;
 }) {
   const [count, setCount] = useState(5);
   const [posts, setPosts] = useState<MorningPost[]>([]);
@@ -56,8 +65,8 @@ export function MorningShow({
       const json = await res.json().catch(() => ({}));
       if (!res.ok)
         throw new Error(json.error || `Request failed (${res.status}).`);
-      onScript(json.title, json.script);
-      toast.success("Monologue written. Check it, then make the preview.");
+      onScript(json as MorningShowResult);
+      toast.success("Show written. Check it, then make the preview.");
     } catch (e) {
       toast.error(
         e instanceof Error ? e.message : "Joe couldn't write the monologue.",
@@ -79,7 +88,9 @@ export function MorningShow({
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground leading-relaxed">
         Today&apos;s top posts from job-hunt and AI Reddit and Hacker News.
-        Untick any you want to skip, and Joe writes a monologue about the rest.
+        Untick any you want to skip. For each one, Joe answers a question people
+        are really searching (from Google autocomplete), and the video gets a
+        search-friendly YouTube title, description and tags.
       </p>
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-muted-foreground">Top</span>
@@ -158,9 +169,7 @@ export function MorningShow({
             ) : (
               <Coffee className="h-3.5 w-3.5 mr-1.5" />
             )}
-            {writing
-              ? "Joe is writing…"
-              : `Write Joe's monologue (${kept.size})`}
+            {writing ? "Joe is writing…" : `Write Joe's show (${kept.size})`}
           </Button>
         </>
       )}

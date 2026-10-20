@@ -28,8 +28,9 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/morning-show { posts } — Joe's monologue about these posts
- * (the ones the user kept). Returns { title, script } for Sit-down with Joe.
+ * POST /api/morning-show { posts } — Joe's search-led monologue about these
+ * posts (the ones the user kept). Returns { title, script, questions,
+ * youtube } for Sit-down with Joe; `youtube` is the upload copy.
  */
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
