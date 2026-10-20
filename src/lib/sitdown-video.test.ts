@@ -2,7 +2,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { buildSitdownVideoHtml, estimateSpeechSec, parseSitdownScript, SITDOWN_END_MS } from "./sitdown-video";
-import { joinClips, pcmToWav, wavPcm } from "./sitdown-voice";
+import { joinClips, joinTurns, pcmToWav, turnsOf, wavPcm } from "./sitdown-voice";
 
 describe("sit-down script", () => {
   it("treats plain lines as Joe's monologue", () => {
@@ -78,4 +78,27 @@ describe("streamed WAV (Fish Audio)", () => {
       assert.equal(out.fmt.sampleRate, 44100);
     }
   });
+});
+
+it("turnsOf groups one speaker's consecutive lines so Fish voices them in one call", () => {
+  const line = (speaker: "joe" | "guest", text: string) => ({ speaker, text }) as Parameters<typeof turnsOf>[0][number];
+  const turns = turnsOf([line("joe", "Hi."), line("joe", "Coffee."), line("guest", "Hey."), line("joe", "Bye.")]);
+  assert.deepEqual(
+    turns.map((t) => t.map((l) => l.text)),
+    [["Hi.", "Coffee."], ["Hey."], ["Bye."]],
+  );
+  // A long monologue splits at line boundaries.
+  assert.equal(turnsOf([line("joe", "a".repeat(10)), line("joe", "b".repeat(10))], 15).length, 2);
+});
+
+it("joinTurns spreads caption starts across a turn by length", () => {
+  const fmt = { numChannels: 1, sampleRate: 1000, byteRate: 2000, blockAlign: 2, bitsPerSample: 16 };
+  const out = joinTurns(
+    [
+      { pcm: Buffer.alloc(4000), lines: ["aaa", "aaa"] },
+      { pcm: Buffer.alloc(2000), lines: ["b"] },
+    ],
+    fmt,
+  );
+  assert.deepEqual(out.startsMs, [0, 1000, 2350]);
 });
