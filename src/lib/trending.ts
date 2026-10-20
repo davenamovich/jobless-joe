@@ -34,7 +34,7 @@ const CACHE_MS = 60 * 60_000;
 const MAX_IDEAS = 8;
 
 // Headlines a comedy song must never touch.
-const SOMBER =
+export const SOMBER =
   /\b(dies|died|dead|death|killed|kill|shooting|shot|murder|crash|victims?|funeral|obituary|war|attack|bomb|terror|hostage|abuse|assault|suicide|cancer|overdose|earthquake|hurricane|flood|wildfire|tornado|missing child|kidnap|massacre|genocide)\b/i;
 
 const g = globalThis as typeof globalThis & {
@@ -79,7 +79,7 @@ async function fetchGoogleTrends(geo = "US"): Promise<TrendSignal[]> {
   return parseGoogleTrendsRss(await res.text()).slice(0, 20);
 }
 
-async function fetchHackerNews(): Promise<TrendSignal[]> {
+export async function fetchHackerNews(): Promise<TrendSignal[]> {
   const res = await fetch("https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=20", {
     signal: AbortSignal.timeout(15_000),
   });
