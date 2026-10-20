@@ -501,7 +501,7 @@ function concatWavBuffers(buffers: Buffer[]): Buffer {
   return wav;
 }
 
-interface ParsedWav {
+export interface ParsedWav {
   fmt: {
     numChannels: number;
     sampleRate: number;
@@ -513,7 +513,7 @@ interface ParsedWav {
 }
 
 /** Parse a WAV buffer into fmt params + the raw PCM `data` chunk. */
-function parseWav(buf: Buffer): ParsedWav {
+export function parseWav(buf: Buffer): ParsedWav {
   if (buf.length < 12 || buf.subarray(0, 4).toString("ascii") !== "RIFF") {
     throw new Error("Not a RIFF/WAV buffer");
   }
