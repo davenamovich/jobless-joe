@@ -47,11 +47,11 @@ local-*
 *.log
 dev.log
 dev.out.log
-test
-prompt
+# Scratch folders at the repo root only; a bare "test" also hid API routes
+# like src/app/api/video/test.
+/test
+/prompt
 # the generic "test" rule above must not hide this API route
-!src/app/api/backend/test/
-!src/app/api/backend/test/route.ts
 
 server.log
 # Skills directory
