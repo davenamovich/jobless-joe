@@ -283,6 +283,12 @@ function sanitizeOutput(out: SongOutput): SongOutput {
 
   return {
     episodeTitle: out.episodeTitle || "Untitled Episode",
+    songPremise: typeof out.songPremise === "string" ? out.songPremise : "",
+    viralHook: typeof out.viralHook === "string" ? out.viralHook : "",
+    socialClip:
+      out.socialClip && typeof out.socialClip.lyrics === "string"
+        ? { section: String(out.socialClip.section ?? ""), lyrics: out.socialClip.lyrics }
+        : undefined,
     duration: out.duration || "",
     musicalDirection: out.musicalDirection || "",
     lyrics: out.lyrics || "",
