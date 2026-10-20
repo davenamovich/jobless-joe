@@ -102,3 +102,21 @@ it("joinTurns spreads caption starts across a turn by length", () => {
   );
   assert.deepEqual(out.startsMs, [0, 1000, 2350]);
 });
+
+describe("expression tags", () => {
+  it("voices tags but hides them from captions", () => {
+    const { lines, guest } = parseSitdownScript(
+      "[excited] Good morning! (laughs) <whisper>Rent is due.</whisper>\n[deadpan] SARAH: [sigh] 401 jobs.",
+    );
+    assert.equal(guest, "Sarah");
+    assert.equal(lines[0].text, "Good morning! Rent is due.");
+    assert.match(lines[0].spoken, /^\[excited\] Good morning! \[laughs\] <whisper>Rent is due\.<\/whisper>$/);
+    assert.equal(lines[1].speaker, "guest");
+    assert.equal(lines[1].text, "401 jobs.");
+    assert.equal(lines[1].spoken, "[deadpan] [sigh] 401 jobs.");
+  });
+
+  it("drops lines that are only tags", () => {
+    assert.equal(parseSitdownScript("[pause]\nHi.").lines.length, 1);
+  });
+});
