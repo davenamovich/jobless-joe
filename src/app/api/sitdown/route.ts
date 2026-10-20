@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { publishFiles } from "@/lib/herenow";
+import { publishSitdownPage, SITDOWN_AUDIO_TYPES as AUDIO_TYPES } from "@/lib/sitdown-page";
 import { audioDurationSec } from "@/lib/song-artifacts";
-import { buildSitdownVideoHtml, estimateSpeechSec, parseSitdownScript } from "@/lib/sitdown-video";
+import { estimateSpeechSec, parseSitdownScript } from "@/lib/sitdown-video";
 import { voiceSitdown } from "@/lib/sitdown-voice";
 
 export const runtime = "nodejs";
@@ -9,15 +9,6 @@ export const runtime = "nodejs";
 export const maxDuration = 180;
 
 const MAX_AUDIO_BYTES = 50 * 1024 * 1024;
-const AUDIO_TYPES: Record<string, string> = {
-  mp3: "audio/mpeg",
-  wav: "audio/wav",
-  m4a: "audio/mp4",
-  aac: "audio/aac",
-  ogg: "audio/ogg",
-  webm: "audio/webm",
-};
-
 function audioFormat(file: File): string | null {
   const ext = /\.([a-z0-9]+)$/i.exec(file.name)?.[1]?.toLowerCase();
   if (ext && AUDIO_TYPES[ext]) return ext;
@@ -77,19 +68,11 @@ export async function POST(req: NextRequest) {
       startsMs = voiced.startsMs;
     }
 
-    const audioFile = `talk.${format}`;
-    const html = buildSitdownVideoHtml({ title, script, audioFile, durationSec, startsMs });
-    const result = await publishFiles(
-      [
-        { path: "index.html", buffer: Buffer.from(html, "utf8"), contentType: "text/html; charset=utf-8" },
-        { path: audioFile, buffer: audio, contentType: AUDIO_TYPES[format] },
-      ],
-      { apiKey: process.env.HERENOW_API_KEY?.trim() || undefined, ttlSeconds: 24 * 3600 },
-    );
+    const url = await publishSitdownPage({ title, script, audio, format, durationSec, startsMs });
 
     return NextResponse.json({
       ok: true,
-      url: result.url.replace(/\/$/, ""),
+      url,
       title,
       guest: script.guest,
       lines: script.lines.length,

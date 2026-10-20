@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Coffee, Loader2, Newspaper, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import type { MorningPost } from "@/lib/morning-show";
+import { MorningAutopublish } from "./MorningAutopublish";
 
 const COUNTS = [3, 5, 7, 10];
 
@@ -173,6 +174,7 @@ export function MorningShow({
           </Button>
         </>
       )}
+      <MorningAutopublish />
     </div>
   );
 }
