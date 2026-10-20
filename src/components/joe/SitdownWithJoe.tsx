@@ -9,6 +9,13 @@ import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -22,6 +29,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { DEFAULT_LANGUAGE, LANGUAGES } from "@/lib/languages";
 import { EveningShow } from "./EveningShow";
 import { MorningShow, type MorningShowResult } from "./MorningShow";
 import { PostToSocials } from "./PostToSocials";
@@ -35,6 +43,8 @@ SARAH: 401. One was a typo.
 Fish Audio acts out tags like [excited], [laugh], [pause] or <whisper>…</whisper>.`;
 
 export function SitdownWithJoe({ className }: { className?: string }) {
+  // The language Joe's shows and expression tags are written in.
+  const [language, setLanguage] = useState(DEFAULT_LANGUAGE);
   const [title, setTitle] = useState("");
   const [script, setScript] = useState("");
   const [audio, setAudio] = useState<File | null>(null);
@@ -97,7 +107,7 @@ export function SitdownWithJoe({ className }: { className?: string }) {
       const res = await fetch("/api/sitdown/expression", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script }),
+        body: JSON.stringify({ script, language }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Request failed (${res.status}).`);
@@ -200,6 +210,28 @@ export function SitdownWithJoe({ className }: { className?: string }) {
         is voiced for you.
       </p>
 
+      <div className="mt-3 flex items-center gap-2">
+        <span className="text-xs text-muted-foreground">Language</span>
+        <Select value={language} onValueChange={setLanguage}>
+          <SelectTrigger className="h-8 flex-1 text-xs">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="max-h-[300px]">
+            {LANGUAGES.map((l) => (
+              <SelectItem key={l.key} value={l.key}>
+                <span className="mr-1.5">{l.flag}</span>
+                {l.nativeLabel}
+                {l.nativeLabel !== l.label && (
+                  <span className="ml-1.5 text-[0.7rem] text-muted-foreground">
+                    {l.label}
+                  </span>
+                )}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <Tabs value={tab} onValueChange={setTab} className="mt-3">
         <TabsList className="w-full">
           <TabsTrigger value="script" className="flex-1 text-xs">
@@ -213,10 +245,10 @@ export function SitdownWithJoe({ className }: { className?: string }) {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="morning" className="mt-3">
-          <MorningShow onScript={loadShow} />
+          <MorningShow onScript={loadShow} language={language} />
         </TabsContent>
         <TabsContent value="evening" className="mt-3">
-          <EveningShow onScript={loadShow} />
+          <EveningShow onScript={loadShow} language={language} />
         </TabsContent>
         <TabsContent value="script" className="mt-3 space-y-2">
           <Input

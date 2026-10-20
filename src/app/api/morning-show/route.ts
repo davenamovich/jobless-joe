@@ -28,13 +28,14 @@ export async function GET(req: NextRequest) {
 }
 
 /**
- * POST /api/morning-show { posts } — Joe's search-led monologue about these
+ * POST /api/morning-show { posts, language } — Joe's search-led monologue about these
  * posts (the ones the user kept). Returns { title, script, questions,
  * youtube } for Sit-down with Joe; `youtube` is the upload copy.
  */
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     posts?: MorningPost[];
+    language?: unknown;
   };
   const posts = (Array.isArray(body.posts) ? body.posts : [])
     .filter((p) => p && typeof p.title === "string" && p.title.trim())
@@ -52,7 +53,10 @@ export async function POST(req: NextRequest) {
   try {
     return NextResponse.json({
       ok: true,
-      ...(await writeMorningMonologue(posts)),
+      ...(await writeMorningMonologue(
+        posts,
+        typeof body.language === "string" ? body.language : undefined,
+      )),
     });
   } catch (e) {
     return NextResponse.json(

@@ -8,6 +8,7 @@
  */
 
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
+import { getLanguage } from "@/lib/languages";
 import { stripExpressionTags } from "@/lib/sitdown-video";
 
 export const EXPRESSION_SYSTEM = `You are the voice director for "Jobless Joe", a laid-off vintage crooner turned late-night host, delivering a comedy monologue or interview at his desk. The script will be performed by an expressive text-to-speech voice that acts out tags.
@@ -48,12 +49,13 @@ export function cleanTaggedReply(raw: string): string {
 }
 
 /** The script with expression tags added; throws if the writer changed words. */
-export async function addExpressionTags(script: string): Promise<string> {
+export async function addExpressionTags(script: string, language?: string): Promise<string> {
   const original = script.trim();
   if (!original) throw new Error("The script is empty.");
+  const lang = getLanguage(language);
   const result = await chat(
     EXPRESSION_SYSTEM,
-    `SCRIPT\n======\n${original}`,
+    `${lang.key === "en" ? "" : `The script is in ${lang.label}. Keep it in ${lang.label}; the tags themselves stay in English.\n\n`}SCRIPT\n======\n${original}`,
     await loadBackendConfig(),
   );
   const tagged = cleanTaggedReply(result.content);
