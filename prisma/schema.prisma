@@ -217,6 +217,9 @@ model BackendConfig {
   /// Facebook Page to post to when the profile manages several Pages
   upFacebookPageId String  @default("")
 
+  /// Groq API key for Whisper transcription (dropped-in songs, lyric timing)
+  groqApiKey      String   @default("")
+
   /// Autopilot: write + sing a new song on a timer, film it, optionally post it
   autoEnabled     Boolean  @default(false)
   autoIntervalMin Int      @default(60)
@@ -313,6 +316,10 @@ model AudioTrack {
   chunkCount  Int      @default(0)
   /// On-disk relative path under /public/audio/, e.g. "ep_abc_jam.mp3"
   filePath    String
+  /// When each stickman beat's lyric line is sung: JSON array of 0..1 song
+  /// fractions from Whisper, one per lyricsToBeats() beat. "" = not timed yet
+  /// (the stickman falls back to the word-count estimate).
+  lineStarts  String   @default("")
 
   @@unique([episodeId, voice])
   @@index([episodeId])

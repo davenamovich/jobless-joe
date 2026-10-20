@@ -59,6 +59,7 @@ function cfg(url: string): BackendConfig {
     upApiKey: "",
     upUser: "",
     upPlatforms: "",
+    groqApiKey: "",
     upFacebookPageId: "",
     autoEnabled: false,
     autoIntervalMin: 60,

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { publishFiles } from "@/lib/herenow";
 import { buildSongPageHtml, songPageStickmanEnabled } from "@/lib/song-page";
 import { downloadName, loadSongArtifacts } from "@/lib/song-artifacts";
+import { storedLineStarts } from "@/lib/song-timing";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -30,6 +31,7 @@ export async function GET(req: NextRequest) {
       audioFile: `/audio/${encodeURIComponent(song.fileName)}`,
       downloadName: downloadName(song.title, song.format),
       stickman: songPageStickmanEnabled(),
+      lineStarts: storedLineStarts(song),
     });
     return new NextResponse(html, {
       headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -73,6 +75,7 @@ export async function POST(req: NextRequest) {
       durationSec: 0,
       temporary: !process.env.HERENOW_API_KEY,
       stickman: songPageStickmanEnabled(),
+      lineStarts: storedLineStarts(song),
     });
 
     const result = await publishFiles(

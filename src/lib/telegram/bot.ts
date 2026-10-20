@@ -114,6 +114,7 @@ export const HELP_TEXT =
   `Talk to Joe about your job hunt (or AI, or his bootcamp) and he talks back. ` +
   `Tap 🎙️ <b>Make it a song</b> under any reply and he writes, sings and publishes a song about it. ` +
   `Use /song &lt;topic&gt; to skip the chat, or paste your own lyrics (4+ lines) and he sings those. ` +
+  `Already have a song? Send the MP3 and it gets transcribed, ready for /video. ` +
   `You get back a link to a song page with a player, MP3 download and lyrics.\n\n` +
   BOT_COMMANDS.map((c) => `/${c.command} — ${c.description}`).join("\n");
 

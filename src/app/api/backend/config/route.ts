@@ -83,6 +83,7 @@ function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
     upApiKey: (cfg.upApiKey ?? "").trim(),
     upUser: (cfg.upUser ?? "").trim(),
     upPlatforms: parsePlatforms(cfg.upPlatforms ?? "").join(",") || UP_DEFAULT_PLATFORMS,
+    groqApiKey: (cfg.groqApiKey ?? "").trim(),
     upFacebookPageId: String(cfg.upFacebookPageId ?? "").trim().replace(/[^0-9]/g, ""),
     autoEnabled: !!cfg.autoEnabled,
     // Never faster than every 15 minutes — each run is a full song render.
@@ -101,9 +102,11 @@ function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
 
 /** Never hand API keys to the browser — only whether they exist. */
 function publicConfig(cfg: BackendConfig) {
-  const { openaiApiKey, prApiKey, ytClientSecret, ytRefreshToken, upApiKey, fishApiKey, ...rest } = cfg;
+  const { openaiApiKey, prApiKey, ytClientSecret, ytRefreshToken, upApiKey, fishApiKey, groqApiKey, ...rest } = cfg;
   return {
     ...rest,
+    hasGroqKey: !!groqApiKey,
+    groqKeyMasked: groqApiKey ? maskKey(groqApiKey) : "",
     hasFishKey: !!fishApiKey,
     fishKeyMasked: fishApiKey ? maskKey(fishApiKey) : "",
     hasUpKey: !!upApiKey,
@@ -148,6 +151,7 @@ export async function PATCH(req: NextRequest) {
   // Same rule for the YouTube client secret: blank = keep the saved one.
   if (!body.ytClientSecret) merged.ytClientSecret = current.ytClientSecret;
   if (!body.upApiKey) merged.upApiKey = current.upApiKey;
+  if (!body.groqApiKey) merged.groqApiKey = current.groqApiKey;
   if (!body.fishApiKey) merged.fishApiKey = current.fishApiKey;
 
   const cfg = sanitize(merged);

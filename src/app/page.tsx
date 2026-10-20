@@ -20,6 +20,7 @@ import { MicLoader } from "@/components/joe/MicLoader";
 import { OutputDisplay } from "@/components/joe/OutputDisplay";
 import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
 import { TrendingIdeas } from "@/components/joe/TrendingIdeas";
+import { SongDrop } from "@/components/joe/SongDrop";
 import { SongIdeas } from "@/components/joe/SongIdeas";
 import { SitdownWithJoe } from "@/components/joe/SitdownWithJoe";
 import { StickmanFromSong } from "@/components/joe/StickmanFromSong";
@@ -526,6 +527,14 @@ export default function Home() {
                 setEpisodeKey("custom");
                 setCustomTopic(idea.topic);
                 handleAction("generate", idea.topic);
+              }}
+            />
+            <SongDrop
+              className="mt-4"
+              disabled={isLoading}
+              onImported={async (id) => {
+                await refreshAll();
+                await handleSelectEpisode(id);
               }}
             />
             <SongIdeas

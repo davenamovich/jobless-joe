@@ -27,6 +27,8 @@ export interface StickmanVideoData {
   audioFile: string;
   /** Best guess at the song length; the page corrects it once the audio loads. */
   durationSec: number;
+  /** Measured start of each scene (0..1 of the song, from Whisper); used when it fits the scenes, else planTimeline's estimate. */
+  lineStarts?: number[] | null;
 }
 
 /** A published here.now page (https, *.here.now) — the only pages we pay to film. */
@@ -57,7 +59,9 @@ export function buildStickmanVideoHtml(data: StickmanVideoData): string {
   const scenes: Scene[] = planned.length ? planned : [{ text: data.title || "", pose: "sing", expression: "smug", prop: "mic", set: "stage" }];
   // Fractions of the track, so they still line up once the page reads the real length.
   const timeline = planTimeline(scenes, data.durationSec || 60);
-  const stage = stickmanStageHtml(scenes, "#b8434f", { starts: timeline.map((t) => t.at) });
+  const stage = stickmanStageHtml(scenes, "#b8434f", {
+    starts: data.lineStarts && data.lineStarts.length === scenes.length ? data.lineStarts : timeline.map((t) => t.at),
+  });
   const durationMs = Math.max(5000, Math.round((data.durationSec || 60) * 1000));
 
   return `<!DOCTYPE html>

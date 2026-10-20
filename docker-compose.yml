@@ -47,6 +47,9 @@ x-default-env: &default-env
   TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
   TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
   HERENOW_API_KEY: ${HERENOW_API_KEY:-}
+  # Groq Whisper transcription (optional; Settings can hold the key instead)
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  WHISPER_MODEL: ${WHISPER_MODEL:-}
   # Next.js runtime config
   NODE_ENV: production
   PORT: 3000

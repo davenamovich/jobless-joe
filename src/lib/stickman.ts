@@ -114,11 +114,13 @@ export function lyricsToBeats(lyrics: string, maxBeats = 48): StickmanBeat[] {
 }
 
 /**
- * When each beat starts, as fractions of the song (0..1): each line's share
- * is its word count, inside a small lead-in/out so the first line doesn't
- * land on the intro bar.
+ * When each beat starts, as fractions of the song (0..1). `real` is the
+ * Whisper-measured timing (lib/song-timing.ts) and wins when it fits these
+ * beats; otherwise each line's share is its word count, inside a small
+ * lead-in/out so the first line doesn't land on the intro bar.
  */
-export function beatStarts(beats: StickmanBeat[], leadIn = 0.04, leadOut = 0.04): number[] {
+export function beatStarts(beats: StickmanBeat[], leadIn = 0.04, leadOut = 0.04, real?: number[] | null): number[] {
+  if (real && real.length === beats.length) return real;
   const weights = beats.map((b) => Math.max(2, b.text.split(/\s+/).filter(Boolean).length));
   const total = weights.reduce((a, b) => a + b, 0) || 1;
   const span = Math.max(0, 1 - leadIn - leadOut);

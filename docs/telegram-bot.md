@@ -33,6 +33,7 @@ bot:  ✍️ Joe is writing a 60s song about…        (edited in place as it go
 | `/next` | Continue the story from the last song |
 | `/funnier` `/sharper` `/attitude` `/ending` | Remix the last song |
 | `/ad` | Turn the last song into a 30-second ad |
+| *an MP3 / audio file / voice note* | Drop-in song: transcribed with Groq Whisper and saved as a song (caption = title), then the song page link. `/video` and remixes work on it. Max 20 MB (Telegram's bot download limit); needs a Groq key |
 
 **Settings for this chat** (no argument = show the options)
 
