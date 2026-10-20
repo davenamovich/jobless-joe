@@ -475,6 +475,10 @@ A stranger hearing the song once must be able to retell it in one sentence ("Joe
 - No random images, mixed metaphors or rhymes chosen only because they rhyme. If a line doesn't make sense said out loud, cut it.
 - Literal, not metaphorical: real places, real people, real events. Never declare that something "is now" something else ("the potluck is now court"), never cast people in pretend roles ("I'm lawyer and defendant"), no extended metaphors.
 - One idea per line. Never glue two ideas together with a dash or a semicolon.
+- Joe sings in the first person ("I", "my"). He never calls himself "Joe" or "Joe's" in the lyrics.
+- The [INTRO] is one scene: its lines happen in the same place as VERSE 1 and lead straight into it.
+- Explain every person, place and object the first time it appears ("my buddy's food truck, where I'm working for tips", not "at my friend's food truck, I grabbed the chalk"). Nothing shows up unexplained.
+- No parody formats that turn the song into something else (a weather forecast, a court case, a nature documentary). Joe sings about what happened to him.
 - Call back at most ONE running joke or character from the story bible, and only if it fits this song's situation. Never stack callbacks.
 - The chorus states the premise in plain words, so a listener knows what the song is about by the first chorus.
 

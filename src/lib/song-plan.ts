@@ -44,6 +44,8 @@ A good plan:
 - Uses specific, real details people recognise (a job ad, a rejection email, a recruiter's message, a rent notice), not vague feelings.
 - Escalates: what actually HAPPENS gets more absurd in each section (real events getting worse), never the imagery. It never jumps to an unrelated scene.
 - Is literal: real places, real people, real events. Nothing "is now" something else, no extended metaphors, no role-play (no "the dinner table is a courtroom").
+- Happens in ONE place, start to finish, and Joe tells it in the first person. Every person, place and object is explained when it first appears.
+- Never turns the song into a parody format (a weather report, a court case, a documentary): Joe sings about what happened to him.
 - Has a twist Joe earns: he uses AI in a concrete, believable way (writes, builds, automates something specific), or the situation flips on the people who doubted him.
 - Ends on a punchline that pays off the setup. The punchline must make sense to someone who only heard this song.
 
@@ -147,7 +149,9 @@ export function flagSuspectLines(lyrics: string): string[] {
       (l) =>
         /\s[—–]\s?|[^\s]—[^\s]|;/.test(l) ||
         /\b(is|are|'s|'re)\s+now\s+(a|an|the|my|our)?\s*\w+/i.test(l) ||
-        /\b(turned|turns)\s+into\s+(a|an|the)\b/i.test(l),
+        /\b(turned|turns)\s+into\s+(a|an|the)\b/i.test(l) ||
+        // Joe narrating himself ("Joe's job is…", "Joe got…"), not "I'm Jobless Joe".
+        /(?<!Jobless )\bJoe(?:'s|’s|\s+(?:is|was|has|had|can|can't|got|gets|does|did|will|won't)\b)/.test(l),
     );
 }
 
@@ -170,6 +174,9 @@ Read the lyrics line by line, as a listener hearing them once. A line is BROKEN 
 - doesn't follow from the line before (a jump to a new scene, a character from nowhere, a pronoun with no clear owner);
 - contradicts the story or another line;
 - is there only because it rhymes.
+- brings in a person, place or object nobody explained ("at my friend's food truck, I grabbed the chalk": why is he there, what is the chalk for?);
+- talks about Joe in the third person ("Joe's job is a weather emergency"): Joe is the singer, so it is "I" and "my";
+- dresses the job hunt up as something else (a weather report, a court case) instead of saying what happened ("one salary cloud hides the pay").
 ${suspects.length ? `\nThese lines look suspicious. Fix each one unless it is genuinely clear and literal:\n${suspects.map((l) => `- ${l}`).join("\n")}\n` : ""}
 For each broken line, write a replacement that says plainly what happens in this song's story, about the same length, keeping Joe's voice, the rhyme feel where you can, and ${lang.label}. One idea per line. Never touch section tags. Keep the last line sung as the punchline (fix it only if it makes no sense).
 
