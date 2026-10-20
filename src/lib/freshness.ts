@@ -55,7 +55,7 @@ export const DEVICES = [
   "a step-by-step 'how-to' that goes wrong at every step",
   "a breakup song sung to his old job",
   "a letter to his younger self, who does not believe him",
-  "one day told hour by hour, each hour worse than the last",
+  "one bad day, from the alarm clock to bedtime",
   "a phone call that keeps getting worse",
   "what the job ad said versus what the job turned out to be",
   "a reply-all email disaster",
