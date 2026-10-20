@@ -21,9 +21,14 @@ import { OutputDisplay } from "@/components/joe/OutputDisplay";
 import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
 import { TrendingIdeas } from "@/components/joe/TrendingIdeas";
 import { SongDrop } from "@/components/joe/SongDrop";
+import { SongIdeas } from "@/components/joe/SongIdeas";
+import { SitdownWithJoe } from "@/components/joe/SitdownWithJoe";
+import { StickmanFromSong } from "@/components/joe/StickmanFromSong";
 import { SettingsDialog } from "@/components/joe/SettingsDialog";
 import { SongPanel } from "@/components/joe/SongPanel";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
+import { WritersRoomDialog } from "@/components/joe/WritersRoomDialog";
+import { JoeChatDialog } from "@/components/joe/JoeChatDialog";
 import { WallManager } from "@/components/joe/WallManager";
 import type { LyricFit } from "@/lib/lyric-budget";
 import {
@@ -62,7 +67,7 @@ interface ApiResponse {
 
 export default function Home() {
   // === Form state ===
-  const [episodeKey, setEpisodeKey] = useState<string>("joe-discovers-ai");
+  const [episodeKey, setEpisodeKey] = useState<string>("unemployed-intro");
   const [customTopic, setCustomTopic] = useState<string>("");
   // A seed Joe has to follow: he keeps its beats and facts, rewrites the lines.
   const [customScript, setCustomScript] = useState<string>("");
@@ -101,6 +106,23 @@ export default function Home() {
   // Set only when the editor pass shortened the lyric to fit its time.
   const [lyricTightened, setLyricTightened] = useState(false);
   const [storyBible, setStoryBible] = useState<StoryBible | null>(null);
+  const [resettingStory, setResettingStory] = useState(false);
+
+  // Start Joe's story over from Season 1, episode 1. Songs are kept.
+  const resetStory = useCallback(async () => {
+    setResettingStory(true);
+    try {
+      const res = await fetch("/api/story-bible", { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.storyBible) throw new Error(j.error || "Could not reset the story.");
+      setStoryBible(j.storyBible);
+      toast.success("Story reset. Next up: Season 1, episode 1.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not reset the story.");
+    } finally {
+      setResettingStory(false);
+    }
+  }, []);
   const [episodes, setEpisodes] = useState<EpisodeListItem[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadingLabel, setLoadingLabel] = useState<string>("Joe is warming up…");
@@ -317,7 +339,8 @@ export default function Home() {
   // === Generate / refine ===
   const handleAction = useCallback(
     async (action: ActionKey, topicOverride?: string) => {
-      // A one-click trending idea sings that topic, whatever the panel says.
+      // A one-click trending idea, or "Make it a song" from Chat with Joe, sings
+      // that topic whatever the panel says.
       const epKey = topicOverride ? "custom" : episodeKey;
       const topic = topicOverride ?? customTopic;
       const isCustom = epKey === "custom";
@@ -359,6 +382,8 @@ export default function Home() {
             croonerStyle,
             language,
             action,
+            // Refinements work on the song on screen, not the newest in the DB.
+            episodeId: action === "generate" ? undefined : selectedEpisodeId,
           }),
         });
         const json: ApiResponse = await res.json();
@@ -404,7 +429,19 @@ export default function Home() {
       target,
       croonerStyle,
       language,
+      selectedEpisodeId,
     ]
+  );
+
+  // Chat with Joe → song: show the topic in the controls and sing it now.
+  const makeSongFromChat = useCallback(
+    (topic: string) => {
+      setEpisodeKey("custom");
+      setCustomTopic(topic);
+      setCustomScript("");
+      void handleAction("generate", topic);
+    },
+    [handleAction]
   );
 
   // === Pick a historical episode to view ===
@@ -459,7 +496,8 @@ export default function Home() {
 
         <div className="grid grid-cols-1 lg:grid-cols-[340px_minmax(0,1fr)_360px] gap-6">
           {/* Left column: Controls */}
-          <aside className="lg:sticky lg:top-20 self-start">
+          <aside className="lg:sticky lg:top-20 self-start space-y-3">
+            <JoeChatDialog onMakeSong={makeSongFromChat} disabled={isLoading} />
             <ControlPanel
               episodeKey={episodeKey}
               setEpisodeKey={setEpisodeKey}
@@ -499,6 +537,17 @@ export default function Home() {
                 await handleSelectEpisode(id);
               }}
             />
+            <SongIdeas
+              className="mt-4"
+              disabled={isLoading}
+              onPick={(idea) => {
+                setEpisodeKey("custom");
+                setCustomTopic(idea.topic);
+                handleAction("generate", idea.topic);
+              }}
+            />
+            <SitdownWithJoe className="mt-4" />
+            <StickmanFromSong className="mt-4" />
           </aside>
 
           {/* Middle column: Output + Story Bible + Episode Archive */}
@@ -550,13 +599,15 @@ export default function Home() {
                 <div className="flex items-center gap-2 mb-2 px-1">
                   <BookOpen className="h-4 w-4 text-primary" />
                   <h2 className="font-serif text-lg">Story Bible</h2>
-                  {storyBible && (
-                    <span className="text-xs text-muted-foreground ml-auto">
-                      Episode {storyBible.episodeCount}
-                    </span>
-                  )}
+                  <span className="ml-auto">
+                    <WritersRoomDialog onStoryChanged={setStoryBible} />
+                  </span>
                 </div>
-                <StoryBibleCard storyBible={storyBible} />
+                <StoryBibleCard
+                  storyBible={storyBible}
+                  onReset={resetStory}
+                  resetting={resettingStory}
+                />
               </div>
               <div>
                 <div className="flex items-center gap-2 mb-2 px-1">

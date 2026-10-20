@@ -214,6 +214,8 @@ model BackendConfig {
   upUser          String   @default("")
   /// Comma-separated platform[] values, e.g. "tiktok,instagram,youtube"
   upPlatforms     String   @default("tiktok,instagram,youtube")
+  /// Facebook Page to post to when the profile manages several Pages
+  upFacebookPageId String  @default("")
 
   /// Groq API key for Whisper transcription (dropped-in songs, lyric timing)
   groqApiKey      String   @default("")
@@ -226,6 +228,24 @@ model BackendConfig {
   /// Telegram chat that hears about each autopilot run (set by /autopilot on)
   autoChatId      String   @default("")
   autoLastRunAt   DateTime?
+
+  /// Fish Audio API key (Authorization: Bearer ...) for sit-down voices
+  fishApiKey       String  @default("")
+  /// Fish Audio voice model id (reference_id) for Joe; empty = Fish default
+  fishJoeVoiceId   String  @default("")
+  /// Fish Audio voice model id for the sit-down guest
+  fishGuestVoiceId String  @default("")
+
+  /// Morning Show autopilot: once a day, pull the top posts, write Joe's
+  /// show, voice it, film the MP4 and post it via Upload-Post
+  morningEnabled   Boolean  @default(false)
+  /// Local hour (0-23) in morningTimeZone to run at
+  morningHour      Int      @default(7)
+  /// How many top posts the show covers
+  morningCount     Int      @default(5)
+  /// IANA time zone, e.g. "America/New_York" (saved from the browser); empty = server time
+  morningTimeZone  String   @default("")
+  morningLastRunAt DateTime?
 }
 
 /// A Plunder & Riffle video made from an episode's song.
@@ -303,4 +323,28 @@ model AudioTrack {
 
   @@unique([episodeId, voice])
   @@index([episodeId])
+}
+
+/// The active story arc, written with Ralph in the writers' room. No row means
+/// the built-in Season 1 (src/lib/season.ts) is the arc.
+model StoryArc {
+  id        String   @id @default("current")
+  updatedAt DateTime @updatedAt
+  /// JSON StoryArc
+  arc       String
+}
+
+/// A Sit-down show Joe wrote (Morning Show or Ask Joe), so the next one
+/// doesn't repeat its letters, jokes or sign-offs.
+model ShowRecord {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  /// "morning" | "evening"
+  kind      String
+  title     String
+  /// JSON string[]: the letters or posts the show covered
+  items     String   @default("[]")
+  script    String
+
+  @@index([kind, createdAt])
 }

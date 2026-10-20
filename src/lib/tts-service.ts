@@ -30,8 +30,10 @@ import {
   loadBackendConfig,
   type BackendConfig,
 } from "@/lib/ai-backend";
-import { buildAceCaption } from "@/lib/crooner-styles";
+import { buildAceCaption, isDuetEpisode, markDuetLyrics } from "@/lib/crooner-styles";
 import { getLanguage } from "@/lib/languages";
+import { buildAceStepTaskPayload, renderAceStepTask } from "@/lib/ace-step-payload";
+import { singableLyrics } from "@/lib/sung-pronunciation";
 import type { SongOutput } from "@/lib/joe-prompts";
 import { ensureTrackTiming } from "@/lib/song-timing";
 
@@ -175,7 +177,8 @@ async function runEnsureAudioTrack(
         output,
         episode.duration,
         cfg,
-        episode.language
+        episode.language,
+        isDuetEpisode(episodeId)
       );
     } catch (e) {
       console.error("ACE-Step generation failed", e);
@@ -310,7 +313,7 @@ async function runEnsureAudioTrack(
 
 // ---------------- ACE-Step (music generation) ----------------
 
-/** ACE-Step answers a 503 until a DiT model is initialized; init can take ~20s. */
+/** Whole render budget: init (~20s) + queue + generation + download. */
 const ACE_STEP_TIMEOUT_MS = 15 * 60 * 1000;
 
 /** Accept a bare host, http(s) URL, or URL ending in /v1. */
@@ -319,11 +322,6 @@ function aceStepBase(raw: string): string {
   url = url.replace(/\/v1$/i, "");
   if (!/^https?:\/\//i.test(url)) url = `http://${url}`;
   return url;
-}
-
-/** "acestep/acestep-v15-turbo" -> "acestep-v15-turbo" (what /v1/init expects). */
-function aceStepInitModel(model: string): string {
-  return model.replace(/^[^/]+\//, "").trim();
 }
 
 function aceStepHeaders(): Record<string, string> {
@@ -349,127 +347,49 @@ function aceStepDurationSec(durationKey: string, label?: string): number {
   return Math.min(240, Math.max(10, seconds));
 }
 
-interface AceStepChatResponse {
-  choices?: Array<{
-    message?: {
-      content?: string;
-      audio?: Array<{ audio_url?: { url?: string } }>;
-    };
-    finish_reason?: string;
-  }>;
-  error?: { message?: string };
-}
-
 /**
  * Ask ACE-Step to render Joe's lyrics as an actual song. Returns the decoded
  * audio buffer; the caller persists it and the AudioTrack row.
  *
  * Works against a local server (http://localhost:8001) or an ngrok tunnel.
+ * Payload settings live in buildAceStepTaskPayload (see ace-step-payload.ts).
  */
 async function generateAceStepAudio(
   output: SongOutput,
   durationKey: string,
   cfg: BackendConfig,
-  language?: string
+  language?: string,
+  duet = false
 ): Promise<{ buffer: Buffer; format: string; durationSec: number }> {
   const base = aceStepBase(cfg.aceStepBaseUrl);
   const model = cfg.aceStepModel?.trim() || ACE_STEP_DEFAULT_MODEL;
-  const seconds = aceStepDurationSec(durationKey, output.duration);
-  const lyrics = output.lyrics?.trim() ?? "";
+  const vocalLanguage = getLanguage(language).ace;
+  // Sung copy only: digits, symbols, acronyms and loanwords spelled the way
+  // they should sound. The stored and displayed lyrics stay as written.
+  const written = singableLyrics(output.lyrics?.trim() ?? "", vocalLanguage);
+  const lyrics = duet ? markDuetLyrics(written) : written;
   // Always the same Joe voice brief, with a short episode-specific clause
-  // appended — see ACE_CROONER_STYLE_PROMPT.
-  const caption = buildAceCaption(output);
+  // appended — see ACE_CROONER_STYLE_PROMPT. About one song in five is a duet.
+  const caption = buildAceCaption(output, { duet });
 
-  const payload = {
+  const payload = buildAceStepTaskPayload({
+    caption,
+    lyrics,
+    durationSec: aceStepDurationSec(durationKey, output.duration),
+    vocalLanguage,
     model,
-    messages: [
-      {
-        role: "user",
-        content: lyrics
-          ? `<prompt>${caption}</prompt><lyrics>${lyrics}</lyrics>`
-          : caption,
-      },
-    ],
-    stream: false,
-    thinking: false,
-    use_format: false,
-    // No lyrics? Let ACE-Step invent everything from the caption.
-    ...(lyrics ? {} : { sample_mode: true }),
-    audio_config: {
-      duration: seconds,
-      format: "mp3",
-      vocal_language: getLanguage(language).ace,
-    },
-  };
+  });
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ACE_STEP_TIMEOUT_MS);
-  const headers = aceStepHeaders();
-  const url = `${base}/v1/chat/completions`;
-
-  const send = () =>
-    fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
+  try {
+    const rendered = await renderAceStepTask(payload, {
+      base,
+      headers: aceStepHeaders(),
+      initModel: model,
       signal: controller.signal,
     });
-
-  try {
-    let res = await send();
-
-    // Fresh server: models exist but aren't loaded. Initialize and retry once.
-    if (res.status === 503) {
-      const text = await res.text().catch(() => "");
-      if (!/not initialized/i.test(text)) {
-        throw new Error(`HTTP 503: ${text.slice(0, 300)}`);
-      }
-      const initRes = await fetch(`${base}/v1/init`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({ model: aceStepInitModel(model), init_llm: false }),
-        signal: controller.signal,
-      });
-      if (!initRes.ok) {
-        const initText = await initRes.text().catch(() => "");
-        throw new Error(
-          `model init failed (${initRes.status}): ${initText.slice(0, 300)}`
-        );
-      }
-      res = await send();
-    }
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => "");
-      throw new Error(`HTTP ${res.status}: ${text.slice(0, 300)}`);
-    }
-
-    const json = (await res.json()) as AceStepChatResponse;
-    if (json.error?.message) throw new Error(json.error.message);
-
-    const choice = json.choices?.[0];
-    if (choice?.finish_reason === "error") {
-      throw new Error(choice.message?.content || "generation failed");
-    }
-
-    const dataUrl = choice?.message?.audio?.[0]?.audio_url?.url;
-    if (!dataUrl || !dataUrl.startsWith("data:")) {
-      const preview = (choice?.message?.content ?? "").slice(0, 200);
-      throw new Error(`no audio in response${preview ? `: ${preview}` : ""}`);
-    }
-
-    const comma = dataUrl.indexOf(",");
-    if (comma === -1) throw new Error("malformed audio data URL");
-    const mime = dataUrl.slice(5, comma).split(";")[0] || "audio/mpeg";
-    const buffer = Buffer.from(dataUrl.slice(comma + 1), "base64");
-    if (buffer.length === 0) throw new Error("decoded audio was empty");
-
-    const format = /wav/i.test(mime)
-      ? "wav"
-      : /flac/i.test(mime)
-        ? "flac"
-        : "mp3";
-    return { buffer, format, durationSec: seconds };
+    return { ...rendered, durationSec: payload.audio_duration };
   } catch (e) {
     if (e instanceof Error && e.name === "AbortError") {
       throw new Error("timed out waiting for ACE-Step (15 min)");
@@ -522,7 +442,7 @@ function concatWavBuffers(buffers: Buffer[]): Buffer {
   return wav;
 }
 
-interface ParsedWav {
+export interface ParsedWav {
   fmt: {
     numChannels: number;
     sampleRate: number;
@@ -534,7 +454,7 @@ interface ParsedWav {
 }
 
 /** Parse a WAV buffer into fmt params + the raw PCM `data` chunk. */
-function parseWav(buf: Buffer): ParsedWav {
+export function parseWav(buf: Buffer): ParsedWav {
   if (buf.length < 12 || buf.subarray(0, 4).toString("ascii") !== "RIFF") {
     throw new Error("Not a RIFF/WAV buffer");
   }

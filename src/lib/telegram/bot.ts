@@ -80,15 +80,18 @@ export function setState(chatId: number, state: Partial<ConversationState>) {
 }
 
 // ─── Main Menu ────────────────────────────────────────────────────────────
-// Text-only for now: everything is a slash command or a plain-text topic, so
-// there are no inline buttons (and no callback handler) to keep in sync.
+// Commands plus plain-text chat with Joe. Inline buttons (Make it a song,
+// Make MP4) are handled in process.ts.
 
 /** Shown in Telegram's "/" menu (setMyCommands) and in /help. */
 export const BOT_COMMANDS: { command: string; description: string }[] = [
-  { command: "song", description: "Write a song about a topic" },
+  { command: "song", description: "Write a song about a topic right away" },
+  { command: "newchat", description: "Joe forgets the chat and starts fresh" },
   { command: "lyrics", description: "Joe sings your own lyrics" },
   { command: "episode", description: "Sing a story episode" },
   { command: "next", description: "Continue the story" },
+  { command: "arc", description: "The season's story arc" },
+  { command: "ralph", description: "Pitch ideas to Ralph, Joe's head writer" },
   { command: "funnier", description: "Remix the last song: funnier" },
   { command: "sharper", description: "Remix the last song: sharper punchlines" },
   { command: "attitude", description: "Remix the last song: more attitude" },
@@ -108,8 +111,9 @@ export const BOT_COMMANDS: { command: string; description: string }[] = [
 
 export const HELP_TEXT =
   `🎙️ <b>Jobless Joe — Crooner Song Engine</b>\n\n` +
-  `Send me a topic and Joe writes, sings and publishes a song about it — ` +
-  `or paste your own lyrics (4+ lines) and he sings those. ` +
+  `Talk to Joe about your job hunt (or AI, or his bootcamp) and he talks back. ` +
+  `Tap 🎙️ <b>Make it a song</b> under any reply and he writes, sings and publishes a song about it. ` +
+  `Use /song &lt;topic&gt; to skip the chat, or paste your own lyrics (4+ lines) and he sings those. ` +
   `Already have a song? Send the MP3 and it gets transcribed, ready for /video. ` +
   `You get back a link to a song page with a player, MP3 download and lyrics.\n\n` +
   BOT_COMMANDS.map((c) => `/${c.command} — ${c.description}`).join("\n");

@@ -17,6 +17,8 @@ import {
 } from "./commands/video";
 import { handleAutopilot } from "./commands/autopilot";
 import { handleTrending, handleTrendCallback, TREND_CALLBACK_PREFIX } from "./commands/trending";
+import { handleArc, handleRalph } from "./commands/ralph";
+import { handleNewChat, handleSongCallback, SONG_CALLBACK } from "./commands/chat";
 import { answerCallbackQuery } from "./types";
 import { handleNonCommandMessage } from "./handlers/message";
 import { audioAttachment, handleAudioMessage } from "./upload-flow";
@@ -29,6 +31,10 @@ register("song", song.handleSong);
 register("lyrics", song.handleLyrics);
 register("episode", song.handleEpisode);
 register("next", song.handleNext);
+register("resetstory", song.handleResetStory);
+register("ralph", handleRalph);
+register("arc", handleArc);
+register("newchat", handleNewChat);
 register("funnier", song.handleFunnier);
 register("sharper", song.handleSharper);
 register("attitude", song.handleAttitude);
@@ -59,6 +65,7 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
       if (cq.data?.startsWith(MP4_CALLBACK_PREFIX)) await handleMp4Callback(cq);
       else if (cq.data?.startsWith(POST_CALLBACK_PREFIX)) await handlePostCallback(cq);
       else if (cq.data?.startsWith(TREND_CALLBACK_PREFIX)) await handleTrendCallback(cq);
+      else if (cq.data === SONG_CALLBACK) await handleSongCallback(cq);
       else await answerCallbackQuery(cq.id).catch(() => {});
       return;
     }

@@ -39,6 +39,12 @@ describe("freshness", () => {
     assert.equal(top.device, DEVICES[DEVICES.length - 1]);
   });
 
+  it("every angle is literal: no parody formats or role-play", () => {
+    for (const d of [...DEVICES, ...SETTINGS])
+      assert.doesNotMatch(d, /forecast|weather|courtroom|lawyer|noir|priest|documentary|play-by-play|eulogy|lullaby|recipe|sentien|achieved/i, d);
+    assert.match(freshnessBlock([], { setting: SETTINGS[0], device: DEVICES[0] }), /ONE place the whole song happens/);
+  });
+
   it("freshnessBlock lists recent songs and only adds an angle for new songs", () => {
     const recent = [digestSong({ episodeTitle: "Telegram Sent Me a Career", lyrics: LYRICS })!];
     const withAngle = freshnessBlock(recent, { setting: "a laundromat at 2 a.m.", device: "a heist song" });

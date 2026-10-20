@@ -159,6 +159,13 @@ export function OutputDisplay({
               </Button>
             </div>
 
+            {output.songPremise && (
+              <p className="text-sm text-foreground/90 leading-relaxed">
+                <span className="font-semibold">The joke: </span>
+                {output.songPremise}
+              </p>
+            )}
+
             {output.musicalDirection && (
               <div className="rounded-lg border border-border/60 bg-secondary/30 p-3">
                 <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
@@ -184,6 +191,29 @@ export function OutputDisplay({
                 <p className="font-serif italic text-lg text-foreground">
                   “{output.closingLine}”
                 </p>
+              </div>
+            )}
+
+            {(output.viralHook || output.socialClip?.lyrics) && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                {output.viralHook && (
+                  <div className="rounded-lg border border-border/60 bg-secondary/30 p-3">
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
+                      <Sparkles className="h-3.5 w-3.5" /> Viral Hook
+                    </p>
+                    <p className="font-serif italic text-foreground">“{output.viralHook}”</p>
+                  </div>
+                )}
+                {output.socialClip?.lyrics && (
+                  <div className="rounded-lg border border-border/60 bg-secondary/30 p-3">
+                    <p className="text-xs uppercase tracking-wider text-muted-foreground mb-1 flex items-center gap-1.5">
+                      <Clapperboard className="h-3.5 w-3.5" /> Social Clip {output.socialClip.section}
+                    </p>
+                    <p className="text-sm text-foreground/90 whitespace-pre-line leading-relaxed">
+                      {output.socialClip.lyrics}
+                    </p>
+                  </div>
+                )}
               </div>
             )}
 

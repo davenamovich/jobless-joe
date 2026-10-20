@@ -60,10 +60,18 @@ function cfg(url: string): BackendConfig {
     upUser: "",
     upPlatforms: "",
     groqApiKey: "",
+    upFacebookPageId: "",
     autoEnabled: false,
     autoIntervalMin: 60,
     autoPublish: false,
     autoChatId: "",
+    fishApiKey: "",
+    fishJoeVoiceId: "",
+    fishGuestVoiceId: "",
+    morningEnabled: false,
+    morningHour: 7,
+    morningCount: 5,
+    morningTimeZone: "",
   };
 }
 
