@@ -949,38 +949,6 @@ export function SettingsDialog({ onConfigChanged }: Props) {
 
             <Separator />
 
-            {/* Groq Whisper transcription */}
-            <div className="space-y-3">
-              <div className="flex items-start gap-2">
-                <Mic className="h-4 w-4 text-primary mt-0.5" />
-                <div>
-                  <p className="text-sm font-semibold">Transcription (Groq Whisper)</p>
-                  <p className="text-xs text-muted-foreground leading-relaxed">
-                    Listens to each song to time the stickman to the real vocals, and
-                    turns dropped-in MP3s into lyrics. Get a key at console.groq.com → API Keys.
-                  </p>
-                </div>
-              </div>
-              <div className="space-y-1.5 rounded-md border border-border/60 bg-secondary/20 p-4">
-                <Label htmlFor="groq-key" className="text-xs">
-                  API key{" "}
-                  {hasExistingGroqKey && (
-                    <span className="text-muted-foreground ml-1">(saved: {groqKeyMasked})</span>
-                  )}
-                </Label>
-                <Input
-                  id="groq-key"
-                  type="password"
-                  value={groqKey}
-                  onChange={(e) => setGroqKey(e.target.value)}
-                  placeholder={hasExistingGroqKey ? "•••• leave blank to keep current" : "gsk_…"}
-                  className="bg-card font-mono text-xs"
-                />
-              </div>
-            </div>
-
-            <Separator />
-
             {/* Upload-Post publishing */}
             <div className="space-y-3">
               <div className="flex items-start gap-2">
@@ -1141,6 +1109,38 @@ export function SettingsDialog({ onConfigChanged }: Props) {
                     />
                   </div>
                 </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Groq Whisper transcription */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Mic className="h-4 w-4 text-primary mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Transcription (Groq Whisper)</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Listens to each song to time the stickman to the real vocals, and
+                    turns dropped-in MP3s into lyrics. Get a key at console.groq.com → API Keys.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1.5 rounded-md border border-border/60 bg-secondary/20 p-4">
+                <Label htmlFor="groq-key" className="text-xs">
+                  API key{" "}
+                  {hasExistingGroqKey && (
+                    <span className="text-muted-foreground ml-1">(saved: {groqKeyMasked})</span>
+                  )}
+                </Label>
+                <Input
+                  id="groq-key"
+                  type="password"
+                  value={groqKey}
+                  onChange={(e) => setGroqKey(e.target.value)}
+                  placeholder={hasExistingGroqKey ? "•••• leave blank to keep current" : "gsk_…"}
+                  className="bg-card font-mono text-xs"
+                />
               </div>
             </div>
 
