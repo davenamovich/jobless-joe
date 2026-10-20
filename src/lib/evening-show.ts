@@ -13,11 +13,13 @@
 
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { SOMBER } from "@/lib/trending";
+import { getLanguage } from "@/lib/languages";
 import {
   fetchRedditTop,
   getSearchQuestions,
   morningShowYouTube,
   parseMonologue,
+  showLanguageNote,
   type MorningPost,
 } from "@/lib/morning-show";
 
@@ -90,17 +92,19 @@ export function parseLetters(raw: string): ViewerLetter[] {
   }
 }
 
-async function madeUpLetters(count: number): Promise<ViewerLetter[]> {
+async function madeUpLetters(count: number, language?: string): Promise<ViewerLetter[]> {
+  const lang = getLanguage(language);
+  const inLanguage = lang.key === "en" ? "" : ` Write the letters and sign-offs in ${lang.label}. ${lang.prompt}`;
   const result = await chat(
     LETTERS_SYSTEM,
-    `Write ${count} different letters. Mix the cast and the problems; at least one involves Karen in HR.`,
+    `Write ${count} different letters. Mix the cast and the problems; at least one involves Karen in HR.${inLanguage}`,
     await loadBackendConfig(),
   );
   return parseLetters(result.content).slice(0, count);
 }
 
 /** Viewer letters for tonight's show. Falls back to made-up letters if Reddit is down. */
-export async function getViewerLetters(count: number, source: LetterSource): Promise<ViewerLetter[]> {
+export async function getViewerLetters(count: number, source: LetterSource, language?: string): Promise<ViewerLetter[]> {
   const n = clampLetters(count);
   const fromReddit = source === "madeup" ? 0 : source === "mix" ? Math.ceil(n / 2) : n;
   const reddit = fromReddit
@@ -110,7 +114,7 @@ export async function getViewerLetters(count: number, source: LetterSource): Pro
       })
     : [];
   const need = n - reddit.length;
-  const madeUp = need > 0 ? await madeUpLetters(need) : [];
+  const madeUp = need > 0 ? await madeUpLetters(need, language) : [];
   const letters = [...reddit, ...madeUp];
   if (!letters.length) throw new Error("Joe's mailbag is empty. Try again.");
   return letters;
@@ -164,7 +168,7 @@ export function eveningShowPrompt(letters: ViewerLetter[], searchQuestions: stri
 }
 
 /** Joe's evening show answering these letters. */
-export async function writeEveningShow(letters: ViewerLetter[]): Promise<{
+export async function writeEveningShow(letters: ViewerLetter[], language?: string): Promise<{
   title: string;
   script: string;
   questions: string[];
@@ -172,7 +176,7 @@ export async function writeEveningShow(letters: ViewerLetter[]): Promise<{
 }> {
   if (!letters.length) throw new Error("No letters to answer.");
   const [cfg, searchQuestions] = await Promise.all([loadBackendConfig(), getSearchQuestions()]);
-  const result = await chat(SHOW_SYSTEM, eveningShowPrompt(letters, searchQuestions), cfg);
+  const result = await chat(SHOW_SYSTEM, eveningShowPrompt(letters, searchQuestions) + showLanguageNote(language), cfg);
   const out = parseMonologue(result.content);
   if (!out) throw new Error("Joe lost the mailbag. Try again.");
   const day = new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });

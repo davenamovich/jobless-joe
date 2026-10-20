@@ -14,6 +14,7 @@
  */
 
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
+import { DEFAULT_LANGUAGE, getLanguage } from "@/lib/languages";
 import { SOMBER, fetchHackerNews } from "@/lib/trending";
 import {
   assembleDescription,
@@ -344,8 +345,27 @@ export function morningShowYouTube(
   };
 }
 
+/**
+ * The language block for a Sit-down show in another language. The search
+ * questions come in English, so the writer answers what people search in
+ * that language instead. JSON keys and performance tags stay English: the
+ * code and the voice read those.
+ */
+export function showLanguageNote(language?: string): string {
+  const lang = getLanguage(language);
+  if (lang.key === DEFAULT_LANGUAGE) return "";
+  return `
+
+LANGUAGE: ${lang.label.toUpperCase()}
+${lang.prompt}
+The script, questions, title, hook, summary, tags and hashtags are all in ${lang.label}. Turn any English search question into what ${lang.label} speakers would actually type. Posts or letters in English are retold in ${lang.label}. Keep the JSON keys and the performance tags ([pause], <whisper>…) in English.`;
+}
+
 /** Joe's search-led morning show about these posts. */
-export async function writeMorningMonologue(posts: MorningPost[]): Promise<{
+export async function writeMorningMonologue(
+  posts: MorningPost[],
+  language?: string,
+): Promise<{
   title: string;
   script: string;
   questions: string[];
@@ -358,7 +378,7 @@ export async function writeMorningMonologue(posts: MorningPost[]): Promise<{
   ]);
   const result = await chat(
     MONOLOGUE_SYSTEM,
-    monologuePrompt(posts, searchQuestions),
+    monologuePrompt(posts, searchQuestions) + showLanguageNote(language),
     cfg,
   );
   const out = parseMonologue(result.content);
