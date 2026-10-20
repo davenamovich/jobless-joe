@@ -22,6 +22,7 @@ import {
   CheckCircle2,
   Clapperboard,
   Loader2,
+  Mic,
   Send,
   Settings2,
   Timer,
@@ -54,6 +55,8 @@ interface BackendConfigResponse {
   upPlatforms: string;
   hasUpKey: boolean;
   upKeyMasked: string;
+  hasGroqKey: boolean;
+  groqKeyMasked: string;
   autoEnabled: boolean;
   autoIntervalMin: number;
   autoPublish: boolean;
@@ -136,6 +139,11 @@ export function SettingsDialog({ onConfigChanged }: Props) {
   const [hasExistingUpKey, setHasExistingUpKey] = useState(false);
   const [upKeyMasked, setUpKeyMasked] = useState("");
 
+  // Groq (Whisper transcription)
+  const [groqKey, setGroqKey] = useState("");
+  const [hasExistingGroqKey, setHasExistingGroqKey] = useState(false);
+  const [groqKeyMasked, setGroqKeyMasked] = useState("");
+
   // Autopilot
   const [autoEnabled, setAutoEnabled] = useState(false);
   const [autoInterval, setAutoInterval] = useState(60);
@@ -188,6 +196,9 @@ export function SettingsDialog({ onConfigChanged }: Props) {
         setHasExistingUpKey(cfg.hasUpKey);
         setUpKeyMasked(cfg.upKeyMasked ?? "");
         setUpKey("");
+        setHasExistingGroqKey(!!cfg.hasGroqKey);
+        setGroqKeyMasked(cfg.groqKeyMasked ?? "");
+        setGroqKey("");
         setAutoEnabled(!!cfg.autoEnabled);
         setAutoInterval(cfg.autoIntervalMin || 60);
         setAutoPublish(!!cfg.autoPublish);
@@ -224,6 +235,7 @@ export function SettingsDialog({ onConfigChanged }: Props) {
           upApiKey: upKey,
           upUser,
           upPlatforms: upPlatforms.join(","),
+          groqApiKey: groqKey,
           autoEnabled,
           autoIntervalMin: autoInterval,
           autoPublish,
@@ -248,6 +260,9 @@ export function SettingsDialog({ onConfigChanged }: Props) {
       setHasExistingUpKey(j.config.hasUpKey);
       setUpKeyMasked(j.config.upKeyMasked);
       setUpKey("");
+      setHasExistingGroqKey(j.config.hasGroqKey);
+      setGroqKeyMasked(j.config.groqKeyMasked);
+      setGroqKey("");
       setAutoInterval(j.config.autoIntervalMin);
       toast.success("Backend settings saved.");
       onConfigChanged?.();
@@ -884,6 +899,38 @@ export function SettingsDialog({ onConfigChanged }: Props) {
                         : "No client configured"}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            <Separator />
+
+            {/* Groq Whisper transcription */}
+            <div className="space-y-3">
+              <div className="flex items-start gap-2">
+                <Mic className="h-4 w-4 text-primary mt-0.5" />
+                <div>
+                  <p className="text-sm font-semibold">Transcription (Groq Whisper)</p>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Listens to each song to time the stickman to the real vocals, and
+                    turns dropped-in MP3s into lyrics. Get a key at console.groq.com → API Keys.
+                  </p>
+                </div>
+              </div>
+              <div className="space-y-1.5 rounded-md border border-border/60 bg-secondary/20 p-4">
+                <Label htmlFor="groq-key" className="text-xs">
+                  API key{" "}
+                  {hasExistingGroqKey && (
+                    <span className="text-muted-foreground ml-1">(saved: {groqKeyMasked})</span>
+                  )}
+                </Label>
+                <Input
+                  id="groq-key"
+                  type="password"
+                  value={groqKey}
+                  onChange={(e) => setGroqKey(e.target.value)}
+                  placeholder={hasExistingGroqKey ? "•••• leave blank to keep current" : "gsk_…"}
+                  className="bg-card font-mono text-xs"
+                />
               </div>
             </div>
 

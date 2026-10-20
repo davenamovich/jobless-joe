@@ -63,6 +63,9 @@ export interface BackendConfig {
   /** Comma-separated platform[] values */
   upPlatforms: string;
 
+  /** Groq API key for Whisper transcription */
+  groqApiKey: string;
+
   /** Autopilot: a new song every autoIntervalMin minutes */
   autoEnabled: boolean;
   autoIntervalMin: number;
@@ -110,6 +113,7 @@ const DEFAULT_CONFIG: BackendConfig = {
   upApiKey: "",
   upUser: "",
   upPlatforms: UP_DEFAULT_PLATFORMS,
+  groqApiKey: "",
   autoEnabled: false,
   autoIntervalMin: AUTO_DEFAULT_INTERVAL_MIN,
   autoPublish: false,
@@ -164,6 +168,7 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
       ytChannelId: "",
       ytChannelTitle: "",
       ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
+      groqApiKey: process.env.GROQ_API_KEY ?? "",
       ...envPublishing(),
     };
   }
@@ -194,6 +199,7 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
       upApiKey: row.upApiKey || process.env.UPLOAD_POST_API_KEY || "",
       upUser: row.upUser || process.env.UPLOAD_POST_USER || "",
       upPlatforms: row.upPlatforms || UP_DEFAULT_PLATFORMS,
+      groqApiKey: row.groqApiKey || process.env.GROQ_API_KEY || "",
       autoEnabled: !!row.autoEnabled,
       autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
       autoPublish: !!row.autoPublish,
@@ -231,6 +237,7 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       upApiKey: cfg.upApiKey,
       upUser: cfg.upUser,
       upPlatforms: cfg.upPlatforms,
+      groqApiKey: cfg.groqApiKey,
       autoEnabled: cfg.autoEnabled,
       autoIntervalMin: cfg.autoIntervalMin,
       autoPublish: cfg.autoPublish,
@@ -258,6 +265,7 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       upApiKey: cfg.upApiKey,
       upUser: cfg.upUser,
       upPlatforms: cfg.upPlatforms,
+      groqApiKey: cfg.groqApiKey,
       autoEnabled: cfg.autoEnabled,
       autoIntervalMin: cfg.autoIntervalMin,
       autoPublish: cfg.autoPublish,

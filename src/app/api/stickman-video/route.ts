@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { publishFiles } from "@/lib/herenow";
 import { audioDurationSec, loadSongArtifacts } from "@/lib/song-artifacts";
 import { buildStickmanVideoHtml } from "@/lib/stickman-video";
+import { lineStartsForPage } from "@/lib/song-timing";
 
 export const runtime = "nodejs";
 export const maxDuration = 90;
@@ -25,12 +26,14 @@ export async function GET(req: NextRequest) {
   }
   try {
     const song = await loadSongArtifacts(episodeId);
+    const forceEstimate = new URL(req.url).searchParams.get("timing") === "estimate";
     const html = buildStickmanVideoHtml({
       title: song.title,
       episodeLabel: song.episodeLabel,
       lyrics: song.lyrics,
       audioFile: `/audio/${encodeURIComponent(song.fileName)}`,
       durationSec: durationFor(song),
+      lineStarts: forceEstimate ? null : await lineStartsForPage(song),
     });
     return new NextResponse(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
   } catch (e) {
@@ -63,6 +66,7 @@ export async function POST(req: NextRequest) {
       lyrics: song.lyrics,
       audioFile: audioPath,
       durationSec: durationFor(song),
+      lineStarts: await lineStartsForPage(song),
     });
 
     const result = await publishFiles(

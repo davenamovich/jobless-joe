@@ -255,6 +255,17 @@ export function buildSystemPrompt(
   croonerStyleKey?: string,
   languageKey?: string
 ): string {
+  return `${songwriterCore(croonerStyleKey, languageKey)}
+
+${PACKAGE_RULES}`;
+}
+
+/**
+ * Who Joe is and how his songs are written: everything the songwriter needs
+ * for the lyric alone. Shared by the one-shot prompt above and the
+ * lyrics-only pass (buildLyricsSystemPrompt).
+ */
+function songwriterCore(croonerStyleKey?: string, languageKey?: string): string {
   const style = getCroonerStyle(croonerStyleKey);
   const styleBlock = `${style.musicalDirection} (Style name: "${style.label}". Suggested tempo: ${style.bpm} BPM.)`;
   const lang = getLanguage(languageKey);
@@ -452,9 +463,11 @@ Recurring characters (introduce gradually, give each a recognizable comic trait)
 Episode arc over the whole series:
 UNEMPLOYED → FRUSTRATED → CURIOUS → EXPERIMENTING → BUILDING → CREATING → SELLING → TEACHING OTHERS.
 
-Joe should learn something new in each episode. Joe should NEVER suddenly become an all-knowing expert. Let the audience discover AI alongside him.
+Joe should learn something new in each episode. Joe should NEVER suddenly become an all-knowing expert. Let the audience discover AI alongside him.`;
+}
 
-=========================
+/** The one-shot prompt's second half: the full episode package as JSON. */
+const PACKAGE_RULES = `=========================
 FACEBOOK AD ENGINE OUTPUTS
 =========================
 
@@ -529,12 +542,64 @@ Before you write the JSON, silently check:
 If the song feels generic, predictable, or like an advertisement pretending to be a song, rewrite it before producing the JSON.
 
 Prioritize actual humor and storytelling over marketing polish. Funny first. Memorable second. Marketable third.`;
+
+/**
+ * The lyrics-only pass (StudioStack's approach): the songwriter writes nothing
+ * but the song, as plain text, so all of its attention goes on the words. The
+ * ad copy, video brief and Story Bible are written afterwards around the
+ * finished lyric (buildUserPrompt with lockedLyrics).
+ *
+ * On top of Joe's own rules this adds StudioStack's singability rules: the
+ * render engine sings the text verbatim, so anything that isn't a sung line
+ * or a section tag comes out as noise.
+ */
+export function buildLyricsSystemPrompt(
+  croonerStyleKey?: string,
+  languageKey?: string
+): string {
+  return `${songwriterCore(croonerStyleKey, languageKey)}
+
+=========================
+WRITING FOR THE SINGER
+=========================
+
+This pass writes ONLY the lyric. A music engine will sing it word for word, so:
+- Hook first: the core hook is immediately singable, 4–8 words, and something people would sing back at each other.
+- Vocals start immediately. No instrumental intro, no instrumental break, no bridge without words: if a section exists, Joe sings in it.
+- Write for singing, not reading: short syllables, natural rhythm, open vowels on the held notes, every line sits on the tempo.
+- Be SPECIFIC to this episode's situation. Concrete objects and details beat general statements.
+- Only sung words and bracketed section tags. No stage directions, no (parenthetical cues), no *asterisks*, no emoji, no speaker names, no markdown.
+- The song ends with an [OUTRO] whose last line is the punchline.
+
+=========================
+OUTPUT FORMAT
+=========================
+
+Return ONLY the lyrics, with each [SECTION TAG] on its own line. No title, no JSON, no explanations, no notes, no word count, no markdown fences.`;
 }
 
 /**
- * Build the user-side prompt for a specific generation request.
- * This is what gets sent as the user message alongside the system prompt.
+ * Make a lyric singable as written (from StudioStack's lyric conditioning):
+ * the engine sings everything it gets, so emoji, markdown, stage directions
+ * and (parenthetical cues) go, and dashes and curly quotes become plain
+ * punctuation. Section tags and line breaks are kept.
  */
+export function cleanLyricsForSinging(lyrics: string): string {
+  return String(lyrics ?? "")
+    .replace(/\p{Extended_Pictographic}|\uFE0F/gu, "")
+    .replace(/[*_`#~]+/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[ \t]*[\u2014\u2013][ \t]*/g, ", ")
+    .replace(/^\s*\([^)]*\)\s*$/gm, "")
+    .replace(/\([^)\n]*\)/g, "")
+    .split("\n")
+    .map((l) => l.replace(/[ \t]+/g, " ").replace(/\s+([,.!?])/g, "$1").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /**
  * Custom-script limits. Shared so the control panel's counter and the generate
  * route's validation can never drift apart.
@@ -627,8 +692,19 @@ export interface GenerateRequest {
   } | null;
   /** The FRESHNESS block (recent songs to avoid + comic angle), prebuilt. */
   freshness?: string;
+  /**
+   * "lyrics": the request for the lyrics-only pass (plain-text reply).
+   * "package" (default): the JSON episode. With lockedLyrics set, the song is
+   * already written and the JSON is built around it.
+   */
+  mode?: "lyrics" | "package";
+  lockedLyrics?: string;
 }
 
+/**
+ * Build the user-side prompt for a specific generation request.
+ * This is what gets sent as the user message alongside the system prompt.
+ */
 export function buildUserPrompt(req: GenerateRequest): string {
   const episode = EPISODES.find((e) => e.key === req.episodeKey);
   const episodeArc =
@@ -674,6 +750,46 @@ How to use the script:
 `.trim()
     : "";
 
+  const lyricsOnly = req.mode === "lyrics";
+  const locked = lyricsOnly ? "" : (req.lockedLyrics ?? "").trim();
+  const lockedBlock = locked
+    ? `
+THE SONG IS ALREADY WRITTEN (locked — build the episode around it)
+==================================================================
+${locked}
+
+- Put these lyrics in the "lyrics" field EXACTLY as written: same words, same lines, same tags. Do not rewrite, extend or tighten them.
+- closingLine is the last sung line above, word for word.
+- Title, hooks, ad copy, video brief, captions, teaser and storyBibleUpdate all come from THIS song: quote its real lines, never invent lines it doesn't contain.
+`.trim()
+    : "";
+
+  const remember = lyricsOnly
+    ? `REMEMBER
+========
+- Reply with the lyrics ONLY: section tags on their own lines, sung lines in between. No title, no JSON, no commentary, no markdown fences.
+- Write the song in ${lang.label}. Compose it natively — do not translate.
+- Keep Joe's crooner voice unmistakable, and start singing on the very first line.
+- Fresh material only: nothing from the recent songs listed under FRESHNESS.
+- Honor the Story Bible's continuity.
+- Stay inside the lyric budget, and end on the punchline — the last line sung.${script ? "\n- Cover every beat of the script, in its order. Joe's wording, the user's content." : ""}`
+    : `REMEMBER
+========
+- Respond with a single valid JSON object and NOTHING ELSE.
+- No prose. No markdown fences. No commentary. Just the JSON.${
+        locked
+          ? `
+- The lyrics are locked: copy them into "lyrics" unchanged.
+- Write all audience-facing copy in ${lang.label}.`
+          : `
+- Write the song itself in ${lang.label}. Compose it natively — do not translate.
+- Keep Joe's crooner voice unmistakable.
+- Lead with a hook that stops a social scroll.
+- Fresh material only: nothing from the recent songs listed under FRESHNESS.
+- Stay inside the lyric budget, and end on the punchline — the last line sung.${script ? "\n- Cover every beat of the script, in its order. Joe's wording, the user's content." : ""}`
+      }
+- The storyBibleUpdate should reflect what genuinely changed in THIS episode.`;
+
   return `EPISODE REQUEST
 ================
 Selected episode theme: ${req.episodeLabel}
@@ -697,12 +813,14 @@ ACTION REQUESTED
 ${action?.label}: ${action?.instruction}
 ${scriptBlock ? `
 ${scriptBlock}
+` : ""}${lockedBlock ? `
+${lockedBlock}
 ` : ""}
 ${previousEpisodeBlock}
 ${req.freshness ? `
 ${req.freshness}
 ` : ""}
-CURRENT STORY BIBLE (honor continuity, then propose an updated version)
+CURRENT STORY BIBLE (${lyricsOnly ? "honor continuity" : "honor continuity, then propose an updated version"})
 ========================================================================
 - Joe's current situation: ${sb.currentSituation}
 - Skills Joe has learned so far: ${sb.learnedSkills.length ? sb.learnedSkills.join("; ") : "(none yet)"}
@@ -714,14 +832,5 @@ CURRENT STORY BIBLE (honor continuity, then propose an updated version)
 - Next planned development: ${sb.nextDevelopment}
 - Episodes produced so far: ${sb.episodeCount}
 
-REMEMBER
-========
-- Respond with a single valid JSON object and NOTHING ELSE.
-- No prose. No markdown fences. No commentary. Just the JSON.
-- Write the song itself in ${lang.label}. Compose it natively — do not translate.
-- Keep Joe's crooner voice unmistakable.
-- Lead with a hook that stops a social scroll.
-- Fresh material only: nothing from the recent songs listed under FRESHNESS.
-- Stay inside the lyric budget, and end on the punchline — the last line sung.${script ? "\n- Cover every beat of the script, in its order. Joe's wording, the user's content." : ""}
-- The storyBibleUpdate should reflect what genuinely changed in THIS episode.`;
+${remember}`;
 }
