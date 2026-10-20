@@ -33,6 +33,7 @@ import {
 import { buildAceCaption } from "@/lib/crooner-styles";
 import { getLanguage } from "@/lib/languages";
 import type { SongOutput } from "@/lib/joe-prompts";
+import { ensureTrackTiming } from "@/lib/song-timing";
 
 const AUDIO_DIR = path.join(process.cwd(), "public", "audio");
 const PUBLIC_PREFIX = "/audio";
@@ -176,12 +177,14 @@ async function runEnsureAudioTrack(
       durationSec: Math.round(rendered.durationSec),
       chunkCount: 1,
       filePath,
+      lineStarts: "", // new audio, old timing no longer applies
     };
     const track = await db.audioTrack.upsert({
       where: { episodeId_voice: { episodeId, voice: voiceDef.key } },
       create: { episodeId, voice: voiceDef.key, ...data },
       update: data,
     });
+    void ensureTrackTiming(track.id);
     return {
       ok: true,
       audioTrackId: track.id,
@@ -266,12 +269,14 @@ async function runEnsureAudioTrack(
     durationSec: Math.round(totalDurationSec),
     chunkCount: buffers.length,
     filePath: publicPath,
+    lineStarts: "", // new audio, old timing no longer applies
   };
   const track = await db.audioTrack.upsert({
     where: { episodeId_voice: { episodeId, voice: voiceDef.key } },
     create: { episodeId, voice: voiceDef.key, ...audioData },
     update: audioData,
   });
+  void ensureTrackTiming(track.id);
 
   return {
     ok: true,

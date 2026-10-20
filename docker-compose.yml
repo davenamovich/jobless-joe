@@ -33,18 +33,23 @@
 # All vars have sensible defaults so the app runs even without an env file.
 x-default-env: &default-env
   DATABASE_URL: "file:/app/db/custom.db"
-  # Backend selection — Z.ai by default. Set to "openai-compat" to use
-  # the bundled Ollama (or any other OpenAI-compatible endpoint).
-  AI_BACKEND: ${AI_BACKEND:-zai}
-  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-http://ollama:11434/v1}
-  OPENAI_API_KEY: ${OPENAI_API_KEY:-ollama}
-  OPENAI_MODEL: ${OPENAI_MODEL:-ace-1.5}
+  # Text-model backend. Leave these unset to use what you pick in Settings.
+  # Setting AI_BACKEND or OPENAI_BASE_URL pins the text model and overrides
+  # Settings (e.g. AI_BACKEND=openai-compat, OPENAI_BASE_URL=http://ollama:11434/v1,
+  # OPENAI_API_KEY=ollama, OPENAI_MODEL=ace-1.5 for the bundled Ollama).
+  AI_BACKEND: ${AI_BACKEND:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_MODEL: ${OPENAI_MODEL:-}
   # Telegram bot (optional) — see docs/telegram-bot.md
   TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
   TELEGRAM_WEBHOOK_URL: ${TELEGRAM_WEBHOOK_URL:-}
   TELEGRAM_WEBHOOK_SECRET: ${TELEGRAM_WEBHOOK_SECRET:-}
   TELEGRAM_ALLOWED_CHAT_IDS: ${TELEGRAM_ALLOWED_CHAT_IDS:-}
   HERENOW_API_KEY: ${HERENOW_API_KEY:-}
+  # Groq Whisper transcription (optional; Settings can hold the key instead)
+  GROQ_API_KEY: ${GROQ_API_KEY:-}
+  WHISPER_MODEL: ${WHISPER_MODEL:-}
   # Next.js runtime config
   NODE_ENV: production
   PORT: 3000

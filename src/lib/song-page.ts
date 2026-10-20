@@ -27,6 +27,8 @@ export interface SongPageData {
   temporary?: boolean;
   /** Stick-figure Joe acts out the lyrics above the player. */
   stickman?: boolean;
+  /** Measured start of each lyric beat (0..1); absent = word-count estimate. */
+  lineStarts?: number[] | null;
 }
 
 /** Stickman stage on song pages unless SONG_PAGE_STICKMAN=0. */
@@ -76,7 +78,7 @@ export function buildSongPageHtml(data: SongPageData): string {
   const audioFile = escapeHtml(data.audioFile);
   const downloadName = escapeHtml(data.downloadName);
   const fallbackDuration = niceTime(data.durationSec ?? 0);
-  const stage = data.stickman ? stickmanStageHtml(lyricsToBeats(data.lyrics), "#b8434f") : "";
+  const stage = data.stickman ? stickmanStageHtml(lyricsToBeats(data.lyrics), "#b8434f", data.lineStarts) : "";
 
   return `<!DOCTYPE html>
 <html lang="en">

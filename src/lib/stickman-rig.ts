@@ -176,8 +176,8 @@ export interface RigData {
 }
 
 /** Everything the browser engine needs, as plain JSON. */
-export function buildRigData(beats: StickmanBeat[]): RigData {
-  const starts = beatStarts(beats);
+export function buildRigData(beats: StickmanBeat[], lineStarts?: number[] | null): RigData {
+  const starts = beatStarts(beats, undefined, undefined, lineStarts);
   return {
     beats: beats.map((b, i) => {
       const side = !!b.prop && (SIDE_PROPS.has(b.prop) || (b.prop === "box" && b.pose !== "carry"));
@@ -476,13 +476,13 @@ export const STICKMAN_STAGE_CSS = `
 ${RIG_CSS}`;
 
 /** The stage: the live figure, the section label and the lyric caption, plus the rig data. */
-export function stickmanStageHtml(beats: StickmanBeat[], tie: string): string {
+export function stickmanStageHtml(beats: StickmanBeat[], tie: string, lineStarts?: number[] | null): string {
   if (beats.length === 0) return "";
   return `<section class="sm-stage" id="smStage" aria-label="Joe acts out the song">
   <span class="sm-sec" id="smSec">${escHtml(beats[0].section ?? "")}</span>
   ${rigSvg(tie)}
   <p class="sm-line" id="smLine">${escHtml(beats[0].text)}</p>
-  <script type="application/json" id="smData">${inlineJson(buildRigData(beats))}</script>
+  <script type="application/json" id="smData">${inlineJson(buildRigData(beats, lineStarts))}</script>
 </section>`;
 }
 

@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   ACTIONS,
+  buildLyricsSystemPrompt,
   buildSystemPrompt,
   buildTightenPrompt,
   buildUserPrompt,
+  cleanLyricsForSinging,
   DURATIONS,
   EMPTY_STORY_BIBLE,
   EPISODES,
@@ -14,6 +16,7 @@ import {
   TARGETS,
   type ActionKey,
   type DurationKey,
+  type GenerateRequest,
   type IntensityKey,
   type SongOutput,
   type StoryBible,
@@ -29,7 +32,8 @@ import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { digestSong, freshnessBlock, pickAngle, type RecentSong } from "@/lib/freshness";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// Up to three model calls now: lyrics, tightening, then the episode package.
+export const maxDuration = 180;
 
 interface GenerateBody {
   episodeKey: string;
@@ -237,6 +241,77 @@ function hasSingableLastLine(line: string): boolean {
 }
 
 /**
+ * Make the song fit its own running time before anything is stored.
+ *
+ * The audio engines get an exact number of seconds; a lyric that runs long
+ * has its ending clipped mid-line. So measure against the budget for the
+ * requested duration and, when the song overshoots or never closes, ask the
+ * editor pass for the same song tightened to fit. A failed or worse edit
+ * keeps the original.
+ */
+async function fitToDuration(
+  lyrics: string,
+  before: LyricFit,
+  durationKey: DurationKey,
+  durationLabel: string | undefined,
+  systemPrompt: string,
+  language: string,
+  backendCfg: Awaited<ReturnType<typeof loadBackendConfig>>
+): Promise<{ lyrics: string; fit: LyricFit; tightened: boolean }> {
+  if (before.fits) return { lyrics, fit: before, tightened: false };
+  try {
+    const edited = await chat(
+      systemPrompt,
+      buildTightenPrompt({
+        lyrics,
+        durationKey,
+        durationLabel,
+        words: before.words,
+        targetWords: before.targetWords,
+        maxWords: before.maxWords,
+        missingSections: before.missingSections,
+        hasOutro: before.hasOutro,
+        language,
+      }),
+      backendCfg
+    );
+    const candidate = cleanLyricsForSinging(cleanLyricReply(edited.content));
+    const after = candidate ? analyzeLyricFit(candidate, durationKey, durationLabel) : null;
+    // Keep the edit only when it is genuinely better on one axis and no
+    // worse on the other: never longer, never missing the close a song of
+    // this length needs, and never without a punchline at the end.
+    const needsOutro = (after?.seconds ?? before.seconds) > 20;
+    const improves =
+      !!after &&
+      (after.overBy < before.overBy ||
+        (needsOutro && !before.hasOutro && after.hasOutro));
+    if (
+      after &&
+      after.words > 20 &&
+      after.overBy <= before.overBy &&
+      (!needsOutro || after.hasOutro) &&
+      improves &&
+      hasPunchlineEnding(after)
+    ) {
+      console.log(
+        `Lyrics tightened for ${durationKey}: ${before.words} -> ${after.words} words (max ${after.maxWords})`
+      );
+      return { lyrics: candidate, fit: after, tightened: true };
+    }
+    console.warn(
+      `Lyric tightening rejected for ${durationKey}: draft ${before.words} words (fits=${before.fits}, outro=${before.hasOutro})` +
+        (after
+          ? `, edit ${after.words} words (fits=${after.fits}, outro=${after.hasOutro})`
+          : ", no usable edit")
+    );
+  } catch (e) {
+    // A failed edit must never cost the user their song.
+    console.error("Lyric tightening failed", e);
+  }
+  return { lyrics, fit: before, tightened: false };
+}
+
+/**
  * The LLM is sometimes chatty. Strip any markdown code fences and extract
  * just the JSON object.
  */
@@ -366,7 +441,7 @@ export async function POST(req: NextRequest) {
   );
 
   const systemPrompt = buildSystemPrompt(croonerStyleKey, language);
-  const userPrompt = buildUserPrompt({
+  const promptArgs: GenerateRequest = {
     episodeKey: body.episodeKey,
     episodeLabel: body.episodeLabel,
     customTopic: body.customTopic,
@@ -380,11 +455,42 @@ export async function POST(req: NextRequest) {
     storyBible,
     previousEpisode,
     freshness,
-  });
+  };
 
   // === Pick the AI backend (Z.ai default, or OpenAI-compatible for local /
   // ngrok-hosted models like Ace 1.5). ===
   const backendCfg = await loadBackendConfig();
+  const durationLabel = DURATIONS.find((d) => d.key === body.duration)?.label;
+
+  // === Pass 1: the lyrics alone (StudioStack's approach). ===
+  // The songwriter writes only the song, as plain text, so its whole reply is
+  // the words; it is then fitted to the running time before anything else is
+  // written about it. Alt hooks keep the one-shot: they're about the package,
+  // not a new song. If this pass fails, the one-shot writes the lyrics itself.
+  let locked: { lyrics: string; fit: LyricFit; tightened: boolean } | null = null;
+  if (body.action !== "alt-hooks") {
+    try {
+      const draft = await chat(
+        buildLyricsSystemPrompt(croonerStyleKey, language),
+        buildUserPrompt({ ...promptArgs, mode: "lyrics" }),
+        backendCfg
+      );
+      const lyrics = cleanLyricsForSinging(cleanLyricReply(draft.content));
+      const fit = analyzeLyricFit(lyrics, body.duration, durationLabel);
+      if (fit.words > 20 && !/^\s*[{[]\s*"/.test(lyrics) && hasPunchlineEnding(fit)) {
+        locked = await fitToDuration(lyrics, fit, body.duration, durationLabel, systemPrompt, language, backendCfg);
+      } else {
+        console.warn(`Lyrics pass unusable (${fit.words} words); falling back to the one-shot`);
+      }
+    } catch (e) {
+      console.warn("Lyrics pass failed; falling back to the one-shot", e);
+    }
+  }
+
+  // === Pass 2: the episode package (JSON), built around the locked lyrics. ===
+  const userPrompt = buildUserPrompt(
+    locked ? { ...promptArgs, lockedLyrics: locked.lyrics } : promptArgs
+  );
 
   let raw = "";
   let usedModel = "";
@@ -428,73 +534,31 @@ export async function POST(req: NextRequest) {
   }
 
   let cleaned = sanitizeOutput(parsed);
-  // A sign-off written inside the lyrics field would be sung as the ending.
-  cleaned = { ...cleaned, lyrics: trimLyricSignoff(cleaned.lyrics) };
-
-  // === Make the song fit its own running time before anything is stored. ===
-  // The audio engines get an exact number of seconds; a lyric that runs long
-  // has its ending clipped mid-line. So measure against the budget for the
-  // requested duration and, when the song overshoots or never closes, ask the
-  // editor pass for the same song tightened to fit.
-  const durationLabel = DURATIONS.find((d) => d.key === body.duration)?.label;
-  let lyricFit = analyzeLyricFit(cleaned.lyrics, body.duration, durationLabel);
-  let tightened = false;
-  if (!lyricFit.fits) {
-    const before = lyricFit;
-    try {
-      const edited = await chat(
-        systemPrompt,
-        buildTightenPrompt({
-          lyrics: cleaned.lyrics,
-          durationKey: body.duration,
-          durationLabel,
-          words: before.words,
-          targetWords: before.targetWords,
-          maxWords: before.maxWords,
-          missingSections: before.missingSections,
-          hasOutro: before.hasOutro,
-          language,
-        }),
-        backendCfg
-      );
-      const candidate = cleanLyricReply(edited.content);
-      const after = candidate
-        ? analyzeLyricFit(candidate, body.duration, durationLabel)
-        : null;
-      // Keep the edit only when it is genuinely better on one axis and no
-      // worse on the other: never longer, never missing the close a song of
-      // this length needs, and never without a punchline at the end.
-      const needsOutro = (after?.seconds ?? before.seconds) > 20;
-      const improves =
-        !!after &&
-        (after.overBy < before.overBy ||
-          (needsOutro && !before.hasOutro && after.hasOutro));
-      if (
-        after &&
-        after.words > 20 &&
-        after.overBy <= before.overBy &&
-        (!needsOutro || after.hasOutro) &&
-        improves &&
-        hasPunchlineEnding(after)
-      ) {
-        cleaned = { ...cleaned, lyrics: candidate };
-        lyricFit = after;
-        tightened = true;
-        console.log(
-          `Lyrics tightened for ${body.duration}: ${before.words} -> ${after.words} words (max ${after.maxWords})`
-        );
-      } else {
-        console.warn(
-          `Lyric tightening rejected for ${body.duration}: draft ${before.words} words (fits=${before.fits}, outro=${before.hasOutro})` +
-            (after
-              ? `, edit ${after.words} words (fits=${after.fits}, outro=${after.hasOutro})`
-              : ", no usable edit")
-        );
-      }
-    } catch (e) {
-      // A failed edit must never cost the user their song.
-      console.error("Lyric tightening failed", e);
-    }
+  let lyricFit: LyricFit;
+  let tightened: boolean;
+  if (locked) {
+    // The lyrics were settled in pass 1: never take the package's copy of them
+    // (a model "fixing" them here would undo the fit).
+    cleaned = {
+      ...cleaned,
+      lyrics: locked.lyrics,
+      closingLine: lastSungLine(locked.lyrics) || cleaned.closingLine,
+    };
+    ({ fit: lyricFit, tightened } = locked);
+  } else {
+    // One-shot: a sign-off written inside the lyrics field would be sung as the ending.
+    const lyrics = trimLyricSignoff(cleaned.lyrics);
+    const fitted = await fitToDuration(
+      lyrics,
+      analyzeLyricFit(lyrics, body.duration, durationLabel),
+      body.duration,
+      durationLabel,
+      systemPrompt,
+      language,
+      backendCfg
+    );
+    cleaned = { ...cleaned, lyrics: fitted.lyrics };
+    ({ fit: lyricFit, tightened } = fitted);
   }
 
   const newEpisodeCount =
