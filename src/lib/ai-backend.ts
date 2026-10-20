@@ -75,9 +75,20 @@ export interface BackendConfig {
   fishApiKey: string;
   fishJoeVoiceId: string;
   fishGuestVoiceId: string;
+
+  /** Morning Show autopilot: make and post the show once a day */
+  morningEnabled: boolean;
+  /** Local hour (0-23) in morningTimeZone */
+  morningHour: number;
+  /** Top posts per show */
+  morningCount: number;
+  /** IANA time zone; empty = the server's */
+  morningTimeZone: string;
 }
 
 export const UP_DEFAULT_PLATFORMS = "tiktok,instagram,youtube";
+export const MORNING_DEFAULT_HOUR = 7;
+export const MORNING_DEFAULT_COUNT = 5;
 export const AUTO_DEFAULT_INTERVAL_MIN = 60;
 
 export const ACE_STEP_DEFAULT_URL = "http://localhost:8001";
@@ -122,6 +133,10 @@ const DEFAULT_CONFIG: BackendConfig = {
   fishApiKey: "",
   fishJoeVoiceId: "",
   fishGuestVoiceId: "",
+  morningEnabled: false,
+  morningHour: MORNING_DEFAULT_HOUR,
+  morningCount: MORNING_DEFAULT_COUNT,
+  morningTimeZone: "",
 };
 
 /** Upload-Post + autopilot fields from env (headless deployments). */
@@ -165,6 +180,10 @@ function envDefaults(): BackendConfig {
     fishApiKey: process.env.FISH_AUDIO_API_KEY ?? "",
     fishJoeVoiceId: process.env.FISH_JOE_VOICE_ID ?? "",
     fishGuestVoiceId: process.env.FISH_GUEST_VOICE_ID ?? "",
+    morningEnabled: false,
+    morningHour: MORNING_DEFAULT_HOUR,
+    morningCount: MORNING_DEFAULT_COUNT,
+    morningTimeZone: process.env.TZ ?? "",
   };
 }
 
@@ -208,6 +227,10 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
         fishApiKey: row.fishApiKey || process.env.FISH_AUDIO_API_KEY || "",
         fishJoeVoiceId: row.fishJoeVoiceId || process.env.FISH_JOE_VOICE_ID || "",
         fishGuestVoiceId: row.fishGuestVoiceId || process.env.FISH_GUEST_VOICE_ID || "",
+        morningEnabled: !!row.morningEnabled,
+        morningHour: row.morningHour ?? MORNING_DEFAULT_HOUR,
+        morningCount: row.morningCount || MORNING_DEFAULT_COUNT,
+        morningTimeZone: row.morningTimeZone || "",
       };
     } else {
       cfg = envDefaults();
@@ -267,6 +290,10 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       fishApiKey: cfg.fishApiKey,
       fishJoeVoiceId: cfg.fishJoeVoiceId,
       fishGuestVoiceId: cfg.fishGuestVoiceId,
+      morningEnabled: cfg.morningEnabled,
+      morningHour: cfg.morningHour,
+      morningCount: cfg.morningCount,
+      morningTimeZone: cfg.morningTimeZone,
     },
     update: {
       activeBackend: cfg.activeBackend,
@@ -297,6 +324,10 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       fishApiKey: cfg.fishApiKey,
       fishJoeVoiceId: cfg.fishJoeVoiceId,
       fishGuestVoiceId: cfg.fishGuestVoiceId,
+      morningEnabled: cfg.morningEnabled,
+      morningHour: cfg.morningHour,
+      morningCount: cfg.morningCount,
+      morningTimeZone: cfg.morningTimeZone,
     },
   });
 }
