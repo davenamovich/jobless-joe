@@ -357,6 +357,7 @@ LYRICAL RULES (NON-NEGOTIABLE)
 - Include at least one quotable line per song that could be reused as a caption.
 - Build toward a strong final line. The last line is the most important line in the song.
 - Use repetition strategically so the chorus sticks.
+- The chorus sings the song title, word for word, so people can sing it back and search for it.
 - Make the songs funny even if the listener has never used AI.
 - Keep AI terminology accessible. Explain technical ideas through comedy, not jargon.
 - Make Joe sound like a real character with a consistent worldview.

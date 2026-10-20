@@ -30,7 +30,7 @@ import {
   loadBackendConfig,
   type BackendConfig,
 } from "@/lib/ai-backend";
-import { buildAceCaption } from "@/lib/crooner-styles";
+import { buildAceCaption, isDuetEpisode, markDuetLyrics } from "@/lib/crooner-styles";
 import { getLanguage } from "@/lib/languages";
 import type { SongOutput } from "@/lib/joe-prompts";
 
@@ -155,7 +155,8 @@ async function runEnsureAudioTrack(
         output,
         episode.duration,
         cfg,
-        episode.language
+        episode.language,
+        isDuetEpisode(episodeId)
       );
     } catch (e) {
       console.error("ACE-Step generation failed", e);
@@ -346,15 +347,17 @@ async function generateAceStepAudio(
   output: SongOutput,
   durationKey: string,
   cfg: BackendConfig,
-  language?: string
+  language?: string,
+  duet = false
 ): Promise<{ buffer: Buffer; format: string; durationSec: number }> {
   const base = aceStepBase(cfg.aceStepBaseUrl);
   const model = cfg.aceStepModel?.trim() || ACE_STEP_DEFAULT_MODEL;
   const seconds = aceStepDurationSec(durationKey, output.duration);
-  const lyrics = output.lyrics?.trim() ?? "";
+  const written = output.lyrics?.trim() ?? "";
+  const lyrics = duet ? markDuetLyrics(written) : written;
   // Always the same Joe voice brief, with a short episode-specific clause
-  // appended — see ACE_CROONER_STYLE_PROMPT.
-  const caption = buildAceCaption(output);
+  // appended — see ACE_CROONER_STYLE_PROMPT. About one song in five is a duet.
+  const caption = buildAceCaption(output, { duet });
 
   const payload = {
     model,
