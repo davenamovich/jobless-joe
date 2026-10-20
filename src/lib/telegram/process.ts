@@ -19,6 +19,7 @@ import { handleAutopilot } from "./commands/autopilot";
 import { handleTrending, handleTrendCallback, TREND_CALLBACK_PREFIX } from "./commands/trending";
 import { answerCallbackQuery } from "./types";
 import { handleNonCommandMessage } from "./handlers/message";
+import { audioAttachment, handleAudioMessage } from "./upload-flow";
 
 // Register all commands once, at module load. Keep BOT_COMMANDS in bot.ts in
 // sync so they show up in Telegram's "/" menu.
@@ -84,7 +85,12 @@ export async function processUpdate(update: TelegramUpdate): Promise<void> {
 
       // Fall through to non-command message handler.
       await handleNonCommandMessage(msg);
+      return;
     }
+
+    // A song sent as audio, a voice note or an audio file.
+    const file = audioAttachment(msg);
+    if (file) await handleAudioMessage(msg, file);
   } catch (err) {
     console.error("[telegram.process] update failed", update.update_id, err);
   }

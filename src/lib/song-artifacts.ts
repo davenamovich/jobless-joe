@@ -61,12 +61,15 @@ export async function loadSongArtifacts(episodeId: string): Promise<SongArtifact
   }
 
   const ext = path.extname(fileName).toLowerCase();
-  const contentType =
-    ext === ".wav"
-      ? "audio/wav"
-      : ext === ".flac"
-        ? "audio/flac"
-        : "audio/mpeg";
+  // Dropped-in songs can be any of these; Joe's own renders are WAV or MP3.
+  const CONTENT_TYPES: Record<string, string> = {
+    ".wav": "audio/wav",
+    ".flac": "audio/flac",
+    ".m4a": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".webm": "audio/webm",
+  };
+  const contentType = CONTENT_TYPES[ext] ?? "audio/mpeg";
 
   return {
     title: output.episodeTitle || episode.title || "Untitled Song",

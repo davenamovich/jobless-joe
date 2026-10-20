@@ -35,6 +35,9 @@ import { getLanguage } from "@/lib/languages";
 import type { SongOutput } from "@/lib/joe-prompts";
 import { ensureTrackTiming } from "@/lib/song-timing";
 
+/** AudioTrack.voice of a dropped-in file (lib/song-import.ts). Kept here so TTS never imports the importer. */
+const UPLOAD_VOICE = "upload";
+
 const AUDIO_DIR = path.join(process.cwd(), "public", "audio");
 const PUBLIC_PREFIX = "/audio";
 
@@ -110,6 +113,22 @@ async function runEnsureAudioTrack(
   // Z.ai produces WAV (spoken), ACE-Step produces MP3 (sung/music). The format
   // lets us detect a cached track made by the other engine and regenerate.
   const expectedFormat = engine === "acestep" ? "mp3" : "wav";
+
+  // 0. A dropped-in song is its own audio, whatever voice or engine is asked for.
+  const uploaded = await db.audioTrack.findUnique({
+    where: { episodeId_voice: { episodeId, voice: UPLOAD_VOICE } },
+  });
+  if (uploaded) {
+    return {
+      ok: true,
+      audioTrackId: uploaded.id,
+      audioUrl: uploaded.filePath,
+      durationSec: uploaded.durationSec,
+      chunkCount: uploaded.chunkCount,
+      voice: uploaded.voice,
+      engine,
+    };
+  }
 
   // 1. Look for an existing track.
   const existing = await db.audioTrack.findUnique({
