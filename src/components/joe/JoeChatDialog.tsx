@@ -50,7 +50,7 @@ function save(state: Saved) {
 /**
  * Chat with Joe, the Ralph-style chat from meme-loop-engine in Joe's voice.
  * He remembers the conversation and a few facts about you, and "Make it a
- * song" sings about what you told him as a custom-topic song.
+ * song" turns the whole conversation into a brief for a custom-topic song.
  */
 export function JoeChatDialog({
   onMakeSong,
@@ -63,6 +63,8 @@ export function JoeChatDialog({
   const [state, setState] = useState<Saved>(EMPTY);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
+  const [briefing, setBriefing] = useState(false);
+  const hasTalked = state.messages.some((m) => m.role === "user");
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -107,10 +109,27 @@ export function JoeChatDialog({
     }
   };
 
-  const makeSong = () => {
-    if (!state.songTopic) return;
+  // Joe's head writer turns the whole conversation into the song's brief.
+  const makeSong = async () => {
+    if (busy || !hasTalked) return;
+    setBriefing(true);
+    let topic = state.songTopic;
+    try {
+      const res = await fetch("/api/joe-chat/song", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: state.messages.filter((m) => m.text !== OPENER.text), facts: state.facts }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (res.ok && j.topic) topic = j.topic;
+    } catch {
+      // Keep the last-messages topic.
+    } finally {
+      setBriefing(false);
+    }
+    if (!topic) return;
     setOpen(false);
-    onMakeSong(state.songTopic);
+    onMakeSong(topic);
   };
 
   return (
@@ -163,9 +182,9 @@ export function JoeChatDialog({
             <Button size="sm" onClick={send} disabled={busy || !input.trim()}>
               Send
             </Button>
-            <Button size="sm" variant="default" className="gap-1" onClick={makeSong} disabled={busy || disabled || !state.songTopic}>
+            <Button size="sm" variant="default" className="gap-1" onClick={makeSong} disabled={busy || briefing || disabled || !hasTalked}>
               <Mic className="h-3.5 w-3.5" />
-              Make it a song
+              {briefing ? "Writing it up…" : "Make it a song"}
             </Button>
             <Button size="sm" variant="ghost" className="ml-auto" onClick={() => update(EMPTY)} disabled={busy}>
               New chat
