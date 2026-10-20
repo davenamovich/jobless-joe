@@ -5,6 +5,8 @@ import {
   COURSE_DEFAULT_URL,
   PR_MCP_DEFAULT_URL,
   AUTO_DEFAULT_INTERVAL_MIN,
+  MORNING_DEFAULT_COUNT,
+  MORNING_DEFAULT_HOUR,
   UP_DEFAULT_PLATFORMS,
   loadBackendConfig,
   saveBackendConfig,
@@ -33,6 +35,17 @@ function normalizeUrl(raw: string, fallback = ""): string {
   let url = (raw ?? "").trim().replace(/\/+$/, "");
   if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
   return url || fallback;
+}
+
+/** An IANA zone the runtime knows, else "" (server time). */
+function validTimeZone(tz: string): string {
+  if (!tz) return "";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return "";
+  }
 }
 
 function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
@@ -78,6 +91,10 @@ function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
     fishApiKey: (cfg.fishApiKey ?? "").trim(),
     fishJoeVoiceId: (cfg.fishJoeVoiceId ?? "").trim(),
     fishGuestVoiceId: (cfg.fishGuestVoiceId ?? "").trim(),
+    morningEnabled: !!cfg.morningEnabled,
+    morningHour: Math.min(23, Math.max(0, Math.round(Number(cfg.morningHour ?? MORNING_DEFAULT_HOUR)) || 0)),
+    morningCount: Math.min(10, Math.max(3, Math.round(Number(cfg.morningCount) || MORNING_DEFAULT_COUNT))),
+    morningTimeZone: validTimeZone(String(cfg.morningTimeZone ?? "").trim()),
   };
 }
 

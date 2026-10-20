@@ -230,6 +230,17 @@ model BackendConfig {
   fishJoeVoiceId   String  @default("")
   /// Fish Audio voice model id for the sit-down guest
   fishGuestVoiceId String  @default("")
+
+  /// Morning Show autopilot: once a day, pull the top posts, write Joe's
+  /// show, voice it, film the MP4 and post it via Upload-Post
+  morningEnabled   Boolean  @default(false)
+  /// Local hour (0-23) in morningTimeZone to run at
+  morningHour      Int      @default(7)
+  /// How many top posts the show covers
+  morningCount     Int      @default(5)
+  /// IANA time zone, e.g. "America/New_York" (saved from the browser); empty = server time
+  morningTimeZone  String   @default("")
+  morningLastRunAt DateTime?
 }
 
 /// A Plunder & Riffle video made from an episode's song.

@@ -66,6 +66,10 @@ function cfg(url: string): BackendConfig {
     fishApiKey: "",
     fishJoeVoiceId: "",
     fishGuestVoiceId: "",
+    morningEnabled: false,
+    morningHour: 7,
+    morningCount: 5,
+    morningTimeZone: "",
   };
 }
 
