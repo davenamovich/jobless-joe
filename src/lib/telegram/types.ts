@@ -50,9 +50,11 @@ export interface TelegramMessage {
   chat: TelegramChat;
   date: number;
   text?: string;
-  audio?: { file_id: string; file_name?: string };
-  voice?: { file_id: string };
-  document?: { file_id: string; file_name?: string };
+  /** Text sent along with a file. */
+  caption?: string;
+  audio?: { file_id: string; file_name?: string; file_size?: number; mime_type?: string; title?: string; performer?: string };
+  voice?: { file_id: string; file_size?: number; mime_type?: string };
+  document?: { file_id: string; file_name?: string; file_size?: number; mime_type?: string };
   entities?: TelegramMessageEntity[];
   reply_to_message?: TelegramMessage;
 }

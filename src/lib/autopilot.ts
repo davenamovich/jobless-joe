@@ -149,11 +149,15 @@ export async function runAutopilot(reason: "schedule" | "manual" = "manual"): Pr
   const chatId = cfg.autoChatId;
   let title = "";
   try {
+    // Dropped-in songs aren't part of Joe's run: never continue from one.
     const lastStory = await db.episode.findFirst({
-      where: { episodeTheme: { not: "custom" } },
+      where: { episodeTheme: { notIn: ["custom", "upload"] } },
       orderBy: { createdAt: "desc" },
     });
-    const latest = await db.episode.findFirst({ orderBy: { createdAt: "desc" } });
+    const latest = await db.episode.findFirst({
+      where: { episodeTheme: { not: "upload" } },
+      orderBy: { createdAt: "desc" },
+    });
     const target = nextTarget(latest?.target);
 
     // Alternate: after a story episode, sing something trending (if any
