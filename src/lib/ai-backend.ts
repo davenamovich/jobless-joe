@@ -132,76 +132,91 @@ function envPublishing(): Pick<
   };
 }
 
-/** Read the current backend config from DB, falling back to env vars. */
+/** Defaults for a fresh install: the env vars a headless deployment sets. */
+function envDefaults(): BackendConfig {
+  return {
+    activeBackend: "zai",
+    openaiBaseUrl: "",
+    openaiApiKey: "",
+    openaiModel: "",
+    audioEngine: DEFAULT_CONFIG.audioEngine,
+    aceStepBaseUrl: process.env.ACESTEP_BASE_URL ?? ACE_STEP_DEFAULT_URL,
+    aceStepModel: process.env.ACESTEP_MODEL ?? ACE_STEP_DEFAULT_MODEL,
+    prMcpUrl: process.env.PR_MCP_URL ?? PR_MCP_DEFAULT_URL,
+    prApiKey: process.env.PR_API_KEY ?? "",
+    prRef: process.env.PR_REF ?? "",
+    publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
+    courseUrl: process.env.COURSE_URL ?? COURSE_DEFAULT_URL,
+    ytClientId: process.env.YT_CLIENT_ID ?? "",
+    ytClientSecret: process.env.YT_CLIENT_SECRET ?? "",
+    ytRefreshToken: process.env.YT_REFRESH_TOKEN ?? "",
+    ytChannelId: "",
+    ytChannelTitle: "",
+    ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
+    ...envPublishing(),
+  };
+}
+
+/**
+ * Read the current backend config: the Settings saved in the DB, else env
+ * defaults. AI_BACKEND / OPENAI_* (when set and non-empty) still pin the text
+ * model for headless deployments, but only those fields: P&R, YouTube,
+ * Upload-Post and autopilot always come from what was saved in Settings.
+ */
 export async function loadBackendConfig(): Promise<BackendConfig> {
-  // Env wins for headless / pre-configured deployments.
-  const envBackend = (process.env.AI_BACKEND as BackendKey | undefined) ?? undefined;
-  const envUrl = process.env.OPENAI_BASE_URL;
-  const envKey = process.env.OPENAI_API_KEY;
-  const envModel = process.env.OPENAI_MODEL;
-  const envAudioEngine =
-    process.env.AUDIO_ENGINE === "acestep" || process.env.AUDIO_ENGINE === "zai"
-      ? (process.env.AUDIO_ENGINE as AudioEngine)
-      : undefined;
-
-  if (envBackend || envUrl) {
-    return {
-      activeBackend: envBackend ?? (envUrl ? "openai-compat" : "zai"),
-      openaiBaseUrl: envUrl ?? "",
-      openaiApiKey: envKey ?? "",
-      openaiModel: envModel ?? "",
-      audioEngine: envAudioEngine ?? DEFAULT_CONFIG.audioEngine,
-      aceStepBaseUrl: process.env.ACESTEP_BASE_URL ?? ACE_STEP_DEFAULT_URL,
-      aceStepModel: process.env.ACESTEP_MODEL ?? ACE_STEP_DEFAULT_MODEL,
-      prMcpUrl: process.env.PR_MCP_URL ?? PR_MCP_DEFAULT_URL,
-      prApiKey: process.env.PR_API_KEY ?? "",
-      prRef: process.env.PR_REF ?? "",
-      publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
-      courseUrl: process.env.COURSE_URL ?? COURSE_DEFAULT_URL,
-      ytClientId: process.env.YT_CLIENT_ID ?? "",
-      ytClientSecret: process.env.YT_CLIENT_SECRET ?? "",
-      ytRefreshToken: process.env.YT_REFRESH_TOKEN ?? "",
-      ytChannelId: "",
-      ytChannelTitle: "",
-      ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
-      ...envPublishing(),
-    };
-  }
-
-  // Otherwise read from DB (singleton row "current").
+  let cfg: BackendConfig;
   try {
     const row = await db.backendConfig.findUnique({ where: { id: "current" } });
-    if (!row) return DEFAULT_CONFIG;
-    return {
-      activeBackend: (row.activeBackend as BackendKey) ?? "zai",
-      openaiBaseUrl: row.openaiBaseUrl || "",
-      openaiApiKey: row.openaiApiKey || "",
-      openaiModel: row.openaiModel || "",
-      audioEngine: (row.audioEngine as AudioEngine) ?? "zai",
-      aceStepBaseUrl: row.aceStepBaseUrl || ACE_STEP_DEFAULT_URL,
-      aceStepModel: row.aceStepModel || ACE_STEP_DEFAULT_MODEL,
-      prMcpUrl: row.prMcpUrl || PR_MCP_DEFAULT_URL,
-      prApiKey: row.prApiKey || "",
-      prRef: row.prRef || "",
-      publicBaseUrl: row.publicBaseUrl || "",
-      courseUrl: row.courseUrl || COURSE_DEFAULT_URL,
-      ytClientId: row.ytClientId || "",
-      ytClientSecret: row.ytClientSecret || "",
-      ytRefreshToken: row.ytRefreshToken || "",
-      ytChannelId: row.ytChannelId || "",
-      ytChannelTitle: row.ytChannelTitle || "",
-      ytPrivacy: row.ytPrivacy || "unlisted",
-      upApiKey: row.upApiKey || process.env.UPLOAD_POST_API_KEY || "",
-      upUser: row.upUser || process.env.UPLOAD_POST_USER || "",
-      upPlatforms: row.upPlatforms || UP_DEFAULT_PLATFORMS,
-      autoEnabled: !!row.autoEnabled,
-      autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
-      autoPublish: !!row.autoPublish,
-      autoChatId: row.autoChatId || "",
-    };
+    if (row) {
+      cfg = {
+        activeBackend: (row.activeBackend as BackendKey) ?? "zai",
+        openaiBaseUrl: row.openaiBaseUrl || "",
+        openaiApiKey: row.openaiApiKey || "",
+        openaiModel: row.openaiModel || "",
+        audioEngine: (row.audioEngine as AudioEngine) ?? "zai",
+        aceStepBaseUrl: row.aceStepBaseUrl || ACE_STEP_DEFAULT_URL,
+        aceStepModel: row.aceStepModel || ACE_STEP_DEFAULT_MODEL,
+        prMcpUrl: row.prMcpUrl || PR_MCP_DEFAULT_URL,
+        prApiKey: row.prApiKey || "",
+        prRef: row.prRef || "",
+        publicBaseUrl: row.publicBaseUrl || "",
+        courseUrl: row.courseUrl || COURSE_DEFAULT_URL,
+        ytClientId: row.ytClientId || "",
+        ytClientSecret: row.ytClientSecret || "",
+        ytRefreshToken: row.ytRefreshToken || "",
+        ytChannelId: row.ytChannelId || "",
+        ytChannelTitle: row.ytChannelTitle || "",
+        ytPrivacy: row.ytPrivacy || "unlisted",
+        upApiKey: row.upApiKey || process.env.UPLOAD_POST_API_KEY || "",
+        upUser: row.upUser || process.env.UPLOAD_POST_USER || "",
+        upPlatforms: row.upPlatforms || UP_DEFAULT_PLATFORMS,
+        autoEnabled: !!row.autoEnabled,
+        autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
+        autoPublish: !!row.autoPublish,
+        autoChatId: row.autoChatId || "",
+      };
+    } else {
+      cfg = envDefaults();
+    }
   } catch {
-    return DEFAULT_CONFIG;
+    cfg = envDefaults();
   }
+
+  const envBackend = process.env.AI_BACKEND?.trim() as BackendKey | undefined;
+  const envUrl = process.env.OPENAI_BASE_URL?.trim();
+  if (envBackend || envUrl) {
+    cfg = {
+      ...cfg,
+      activeBackend: envBackend || "openai-compat",
+      openaiBaseUrl: envUrl || cfg.openaiBaseUrl,
+      openaiApiKey: process.env.OPENAI_API_KEY?.trim() || cfg.openaiApiKey,
+      openaiModel: process.env.OPENAI_MODEL?.trim() || cfg.openaiModel,
+    };
+  }
+  if (process.env.AUDIO_ENGINE === "acestep" || process.env.AUDIO_ENGINE === "zai") {
+    cfg = { ...cfg, audioEngine: process.env.AUDIO_ENGINE as AudioEngine };
+  }
+  return cfg;
 }
 
 /** Persist a new backend config to the DB. */
