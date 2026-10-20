@@ -14,6 +14,7 @@
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { SOMBER } from "@/lib/trending";
 import { getLanguage } from "@/lib/languages";
+import { freshnessNote, itemKey, recentShows, recordShow } from "@/lib/show-history";
 import {
   fetchRedditTop,
   getSearchQuestions,
@@ -53,19 +54,69 @@ export function isAdviceQuestion(title: string): boolean {
   );
 }
 
-/** The top advice questions from work subreddits today. */
-export async function fetchRedditLetters(count: number): Promise<ViewerLetter[]> {
+/** The top advice questions from work subreddits today, skipping ones Joe already answered. */
+export async function fetchRedditLetters(count: number, used: Set<string> = new Set()): Promise<ViewerLetter[]> {
   const settled = await Promise.allSettled(ADVICE_SUBS.map(fetchRedditTop));
   const posts: MorningPost[] = settled.flatMap((r) => (r.status === "fulfilled" ? r.value : []));
   const seen = new Set<string>();
   return posts
-    .filter((p) => isAdviceQuestion(p.title) && !seen.has(p.title.toLowerCase()) && seen.add(p.title.toLowerCase()))
+    .filter(
+      (p) =>
+        isAdviceQuestion(p.title) &&
+        !used.has(itemKey(p.title)) &&
+        !seen.has(p.title.toLowerCase()) &&
+        seen.add(p.title.toLowerCase()),
+    )
     .sort((a, b) => b.score - a.score)
     .slice(0, count)
     .map((p) => ({ from: "", question: p.title, source: p.source }));
 }
 
-const CAST = `The office cast (reuse them, they're running gags): Karen in HR, who answers every question with a policy PDF; Chad the 26-year-old manager who says "let's circle back" and "we're a family"; Brenda in accounting, who has been "about to retire" since 2009; the CEO who just announced record profits and a pizza party instead of raises; the AI chatbot that replaced the help desk; the recruiter on LinkedIn who calls everything a "rockstar opportunity".`;
+/** The office's recurring characters. */
+export const CAST_MEMBERS = [
+  "Karen in HR, who answers every question with a policy PDF",
+  'Chad the 26-year-old manager who says "let\'s circle back" and "we\'re a family"',
+  'Brenda in accounting, who has been "about to retire" since 2009',
+  "the CEO who just announced record profits and a pizza party instead of raises",
+  "the AI chatbot that replaced the help desk",
+  'the LinkedIn recruiter who calls everything a "rockstar opportunity"',
+];
+
+const CAST = `The office cast (running gags; use them now and then, never all at once): ${CAST_MEMBERS.join("; ")}.`;
+
+/** Everyday work problems, rotated so the mailbag isn't always the same few. */
+export const LETTER_TOPICS = [
+  "return-to-office mandates",
+  "a raise or promotion that never comes",
+  "a coworker who steals credit",
+  "meetings that should have been emails",
+  "being asked to train the AI that replaces you",
+  "job interviews with too many rounds",
+  "a ghosting recruiter",
+  "unpaid overtime dressed up as 'passion'",
+  "a manager who micromanages",
+  "a group chat or reply-all disaster",
+  "performance reviews",
+  "a boss who texts on weekends",
+  "an office birthday collection",
+  "a job ad asking for 10 years of a new tool",
+  "badge swipes and productivity tracking",
+  "a four-day week that became four ten-hour days",
+  "the team-building retreat",
+  "a coworker who microwaves fish",
+  "salary transparency and finding out the new hire earns more",
+  "quiet quitting, accused of",
+];
+
+/** n different items, shuffled. `rand` is injectable for tests. */
+export function pickSome<T>(list: T[], n: number, rand: () => number = Math.random): T[] {
+  const copy = [...list];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, n);
+}
 
 const LETTERS_SYSTEM = `You write viewer letters for "Ask Joe", the evening advice segment of Jobless Joe's late-night show. Joe is a laid-off vintage crooner who now runs an AI bootcamp.
 
@@ -92,12 +143,22 @@ export function parseLetters(raw: string): ViewerLetter[] {
   }
 }
 
-async function madeUpLetters(count: number, language?: string): Promise<ViewerLetter[]> {
+/** The request for made-up letters: fresh topics, a couple of cast members, nothing already answered. */
+export function madeUpLettersPrompt(count: number, avoid: string[], rand: () => number = Math.random): string {
+  const topics = pickSome(LETTER_TOPICS, count, rand);
+  const cast = pickSome(CAST_MEMBERS, 2, rand);
+  const done = avoid.length
+    ? `\n\nJoe already answered these. Don't repeat them or anything close:\n${avoid.map((q) => `- ${q.slice(0, 160)}`).join("\n")}`
+    : "";
+  return `Write ${count} different letters, one about each of these problems:\n${topics.map((t) => `- ${t}`).join("\n")}\n\nIf a cast member fits, use one of these tonight: ${cast.join("; ")}. Most letters are about the viewer's own boss or coworkers, not the cast.${done}`;
+}
+
+async function madeUpLetters(count: number, language?: string, avoid: string[] = []): Promise<ViewerLetter[]> {
   const lang = getLanguage(language);
   const inLanguage = lang.key === "en" ? "" : ` Write the letters and sign-offs in ${lang.label}. ${lang.prompt}`;
   const result = await chat(
     LETTERS_SYSTEM,
-    `Write ${count} different letters. Mix the cast and the problems; at least one involves Karen in HR.${inLanguage}`,
+    `${madeUpLettersPrompt(count, avoid)}${inLanguage}`,
     await loadBackendConfig(),
   );
   return parseLetters(result.content).slice(0, count);
@@ -106,15 +167,17 @@ async function madeUpLetters(count: number, language?: string): Promise<ViewerLe
 /** Viewer letters for tonight's show. Falls back to made-up letters if Reddit is down. */
 export async function getViewerLetters(count: number, source: LetterSource, language?: string): Promise<ViewerLetter[]> {
   const n = clampLetters(count);
+  const answered = (await recentShows("evening")).flatMap((s) => s.items);
+  const used = new Set(answered.map(itemKey));
   const fromReddit = source === "madeup" ? 0 : source === "mix" ? Math.ceil(n / 2) : n;
   const reddit = fromReddit
-    ? await fetchRedditLetters(fromReddit).catch((e) => {
+    ? await fetchRedditLetters(fromReddit, used).catch((e) => {
         console.warn("[evening-show] reddit unavailable", e);
         return [] as ViewerLetter[];
       })
     : [];
   const need = n - reddit.length;
-  const madeUp = need > 0 ? await madeUpLetters(need, language) : [];
+  const madeUp = need > 0 ? await madeUpLetters(need, language, answered.slice(0, 30)) : [];
   const letters = [...reddit, ...madeUp];
   if (!letters.length) throw new Error("Joe's mailbag is empty. Try again.");
   return letters;
@@ -127,11 +190,11 @@ ${CAST}
 You get tonight's letters. Some came from real online posts: use only the dilemma, rewrite it as a short letter in your own words, give it a funny anonymous sign-off, and never include usernames, real names, employers or other identifying details. Letters that already have a sign-off can be used as written.
 
 Structure:
-- Cold open: one or two lines. "Good evening, it's Ask Joe" energy, plus a joke about Joe's own day.
+- Cold open: one or two lines welcoming viewers to Ask Joe, plus a fresh joke about something that happened to Joe today.
 - For each letter, in order:
   1. Joe reads the letter out loud ("Dear Joe…"), with the sign-off.
   2. His reaction: one line of disbelief.
-  3. His advice: escalate into absurd, theatrical advice (a musical number in the break room, a counter-PowerPoint, replying-all with a sonnet), one or two beats.
+  3. His advice: escalate into absurd, theatrical advice, one or two beats. Invent a new bit for each letter that fits that letter's problem; never use the same kind of bit twice in a show.
   4. Then land it with ONE genuinely useful tip a viewer could actually use (get it in writing, document dates, ask for the raise with numbers, use AI to draft the email). Keep it correct; never give legal advice beyond "check your local rules or talk to a lawyer".
   5. A one-line transition to the next letter.
 - Sign-off: one line, the best laugh. A light nod to the AI bootcamp is fine; never a sales pitch.
@@ -176,10 +239,16 @@ export async function writeEveningShow(letters: ViewerLetter[], language?: strin
 }> {
   if (!letters.length) throw new Error("No letters to answer.");
   const [cfg, searchQuestions] = await Promise.all([loadBackendConfig(), getSearchQuestions()]);
-  const result = await chat(SHOW_SYSTEM, eveningShowPrompt(letters, searchQuestions) + showLanguageNote(language), cfg);
+  const past = await recentShows("evening");
+  const result = await chat(
+    SHOW_SYSTEM,
+    eveningShowPrompt(letters, searchQuestions) + freshnessNote(past, "letters") + showLanguageNote(language),
+    cfg,
+  );
   const out = parseMonologue(result.content);
   if (!out) throw new Error("Joe lost the mailbag. Try again.");
   const day = new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   const youtube = morningShowYouTube(out, { fallbackTitle: `Ask Joe, ${day}`, courseUrl: cfg.courseUrl });
+  await recordShow("evening", { title: youtube.title, items: letters.map((l) => l.question), script: out.script });
   return { title: youtube.title, script: out.script, questions: out.questions, youtube };
 }
