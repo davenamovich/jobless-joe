@@ -475,6 +475,9 @@ A stranger hearing the song once must be able to retell it in one sentence ("Joe
 - No random images, mixed metaphors or rhymes chosen only because they rhyme. If a line doesn't make sense said out loud, cut it.
 - Literal, not metaphorical: real places, real people, real events. Never declare that something "is now" something else ("the potluck is now court"), never cast people in pretend roles ("I'm lawyer and defendant"), no extended metaphors.
 - One idea per line. Never glue two ideas together with a dash or a semicolon.
+- Full, natural sentences, the way a person talks. Never drop little words (the, a, my, to) to save space, and never write in note form ("Noon rejection. One, unpaid panel.", "my AI agent reads ad and transcript"). If the song is too long, cut a whole line instead.
+- No clock-time lists ("Ten: … Eleven: … Noon: …") and no line that says the same thing as another line.
+- Every quote has an opening and a closing quotation mark, and it's clear who is speaking.
 - Joe sings in the first person ("I", "my"). He never calls himself "Joe" or "Joe's" in the lyrics.
 - The [INTRO] is one scene: its lines happen in the same place as VERSE 1 and lead straight into it.
 - Explain every person, place and object the first time it appears ("my buddy's food truck, where I'm working for tips", not "at my friend's food truck, I grabbed the chalk"). Nothing shows up unexplained.
@@ -713,7 +716,7 @@ ${gaps.map((g) => `- ${g}`).join("\n")}
 WHAT TO CUT
 ===========
 - Cut from the MIDDLE. Wordy lines, repeated ideas, stacked adjectives, lines that only restate the previous one, a section the song's length never had room for.
-- Merge two lines into one where the joke survives. Keep every story beat: the setup, the turn, the payoff.
+- Cut whole lines. Never squeeze a line by dropping little words (the, a, my, to) or turning it into note form: every line stays a full, natural sentence. Keep every story beat: the setup, the turn, the payoff.
 - Compress the ending's run-up, never the punchline. The last line sung stays the BEST line in the song.
 
 WHAT IS FIXED

@@ -150,6 +150,9 @@ export function flagSuspectLines(lyrics: string): string[] {
         /\s[—–]\s?|[^\s]—[^\s]|;/.test(l) ||
         /\b(is|are|'s|'re)\s+now\s+(a|an|the|my|our)?\s*\w+/i.test(l) ||
         /\b(turned|turns)\s+into\s+(a|an|the)\b/i.test(l) ||
+        // A clock-time list ("Ten: …", "At three, …") or a quote with only one mark.
+        /^(?:at\s+)?(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|noon|midnight|\d{1,2}(?::\d{2})?)\s*[:,]/i.test(l) ||
+        ((l.match(/[“”"]/g) ?? []).length % 2 === 1) ||
         // Joe narrating himself ("Joe's job is…", "Joe got…"), not "I'm Jobless Joe".
         /(?<!Jobless )\bJoe(?:'s|’s|\s+(?:is|was|has|had|can|can't|got|gets|does|did|will|won't)\b)/.test(l),
     );
@@ -175,6 +178,9 @@ Read the lyrics line by line, as a listener hearing them once. A line is BROKEN 
 - contradicts the story or another line;
 - is there only because it rhymes.
 - brings in a person, place or object nobody explained ("at my friend's food truck, I grabbed the chalk": why is he there, what is the chalk for?);
+- reads like notes with words missing ("At three, my AI agent reads ad and transcript", "Noon rejection. One, unpaid panel."): write the full sentence a person would say;
+- says the same thing as another line, or lists clock times instead of telling what happened;
+- opens or closes a quote without the other quotation mark, or leaves it unclear who is talking;
 - talks about Joe in the third person ("Joe's job is a weather emergency"): Joe is the singer, so it is "I" and "my";
 - dresses the job hunt up as something else (a weather report, a court case) instead of saying what happened ("one salary cloud hides the pay").
 ${suspects.length ? `\nThese lines look suspicious. Fix each one unless it is genuinely clear and literal:\n${suspects.map((l) => `- ${l}`).join("\n")}\n` : ""}
