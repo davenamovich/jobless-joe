@@ -241,7 +241,8 @@ Around the segments:
 Rules:
 - Every line must make literal sense said out loud. One idea per line. Short, conversational sentences.
 - Mock systems and hype, never private people. Public figures only in passing, never insulted.
-- No stage directions, no speaker labels, no emojis, no hashtags, no URLs.
+- No speaker labels, no emojis, no hashtags, no URLs.
+- Performance tags: the voice acts out tags and the captions hide them. Use one or two per segment, where they help the comedy: emotions in square brackets ([excited], [deadpan], [smug], [exasperated], [conspiratorial]), sounds ([laugh], [chuckle], [sigh], [pause] before a punchline), or <whisper>…</whisper> / <emphasis>…</emphasis> around a few words. No parentheses.
 - About 50 to 80 words per segment, plus the open and sign-off.
 
 Also write the YouTube metadata for this episode:
