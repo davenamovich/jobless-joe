@@ -22,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { EveningShow } from "./EveningShow";
 import { MorningShow, type MorningShowResult } from "./MorningShow";
 import { PostToSocials } from "./PostToSocials";
 
@@ -107,6 +108,16 @@ export function SitdownWithJoe({ className }: { className?: string }) {
     } finally {
       setTagging(false);
     }
+  };
+
+  // A Morning Show or Ask Joe script lands in the editor with its YouTube copy.
+  const loadShow = (show: MorningShowResult) => {
+    setTitle(show.title);
+    setScript(show.script);
+    setSeo({ questions: show.questions ?? [], youtube: show.youtube });
+    setAudio(null);
+    if (fileRef.current) fileRef.current.value = "";
+    setTab("script");
   };
 
   const poll = (jobId: string) => {
@@ -197,21 +208,15 @@ export function SitdownWithJoe({ className }: { className?: string }) {
           <TabsTrigger value="morning" className="flex-1 text-xs">
             Morning Show
           </TabsTrigger>
+          <TabsTrigger value="evening" className="flex-1 text-xs">
+            Ask Joe
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="morning" className="mt-3">
-          <MorningShow
-            onScript={(show) => {
-              setTitle(show.title);
-              setScript(show.script);
-              setSeo({
-                questions: show.questions ?? [],
-                youtube: show.youtube,
-              });
-              setAudio(null);
-              if (fileRef.current) fileRef.current.value = "";
-              setTab("script");
-            }}
-          />
+          <MorningShow onScript={loadShow} />
+        </TabsContent>
+        <TabsContent value="evening" className="mt-3">
+          <EveningShow onScript={loadShow} />
         </TabsContent>
         <TabsContent value="script" className="mt-3 space-y-2">
           <Input
