@@ -1,7 +1,8 @@
 /**
  * Stickman video page — a 9:16, full-screen "music video" of a finished
- * song: stick-figure Joe acts out each lyric line on a crooner stage while
- * the MP3 plays. Published to here.now as a temp page first; if it looks
+ * song: stick-figure Joe acts out each lyric line while the MP3 plays, on
+ * ink-drawn sets that follow the lyrics (stickman-scenes.ts), ending on his
+ * punchline. Published to here.now as a temp page first; if it looks
  * right, the same page is filmed to MP4 by Plunder & Riffle's request_mp4.
  *
  * Recorder contract (meme-loop-engine's video/recorder.ts):
@@ -13,10 +14,12 @@
  * block autoplay with sound), and Joe follows the song's own clock.
  */
 
-import { lyricsToBeats } from "./stickman";
 import { STICKMAN_STAGE_CSS, stickmanStageHtml, stickmanStageScript } from "./stickman-rig";
+import { keywordScenes, planTimeline, type Scene } from "./stickman-scenes";
 
 export interface StickmanVideoData {
+  /** The storyboard (stickman-scene-llm.ts); the keyword scenes when absent. */
+  scenes?: Scene[];
   title: string;
   episodeLabel: string;
   lyrics: string;
@@ -50,9 +53,11 @@ function esc(s: string): string {
 export function buildStickmanVideoHtml(data: StickmanVideoData): string {
   const title = esc(data.title || "Untitled Song");
   const label = esc(data.episodeLabel || "Jobless Joe");
-  const beats = lyricsToBeats(data.lyrics);
-  const stage =
-    stickmanStageHtml(beats.length ? beats : [{ text: data.title || "", pose: "sing", expression: "smug", prop: "mic" }], "#b8434f");
+  const planned = data.scenes?.length ? data.scenes : keywordScenes(data.lyrics);
+  const scenes: Scene[] = planned.length ? planned : [{ text: data.title || "", pose: "sing", expression: "smug", prop: "mic", set: "stage" }];
+  // Fractions of the track, so they still line up once the page reads the real length.
+  const timeline = planTimeline(scenes, data.durationSec || 60);
+  const stage = stickmanStageHtml(scenes, "#b8434f", { starts: timeline.map((t) => t.at) });
   const durationMs = Math.max(5000, Math.round((data.durationSec || 60) * 1000));
 
   return `<!DOCTYPE html>
@@ -75,7 +80,7 @@ export function buildStickmanVideoHtml(data: StickmanVideoData): string {
   .sm-stage{--sm-ink:var(--ink);--sm-paper:var(--panel);--sm-accent:var(--gold)}
 ${STICKMAN_STAGE_CSS}
   .sm-stage{flex:1;margin:2.4vh 0 0;border:0;border-radius:0;background:radial-gradient(55% 60% at 50% 18%,rgba(255,236,196,.17),transparent 72%);display:flex;flex-direction:column;justify-content:center;min-height:0}
-  .sm-joe{max-height:52vh}
+  .sm-joe{max-height:52vh;overflow:hidden}
   .sm-line{font-style:italic;font-size:clamp(20px,3.3vh,36px);line-height:1.3;min-height:4.2em;padding:1.2vh 4% 0}
   .sm-sec{top:0;left:50%;transform:translateX(-50%)}
   .bar{height:4px;border-radius:99px;background:rgba(246,236,218,.14);overflow:hidden;margin-top:2vh}
