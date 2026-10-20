@@ -62,6 +62,8 @@ export interface BackendConfig {
   upUser: string;
   /** Comma-separated platform[] values */
   upPlatforms: string;
+  /** Facebook Page ID for Upload-Post (needed when several Pages are connected) */
+  upFacebookPageId: string;
 
   /** Autopilot: a new song every autoIntervalMin minutes */
   autoEnabled: boolean;
@@ -126,6 +128,7 @@ const DEFAULT_CONFIG: BackendConfig = {
   upApiKey: "",
   upUser: "",
   upPlatforms: UP_DEFAULT_PLATFORMS,
+  upFacebookPageId: "",
   autoEnabled: false,
   autoIntervalMin: AUTO_DEFAULT_INTERVAL_MIN,
   autoPublish: false,
@@ -142,12 +145,13 @@ const DEFAULT_CONFIG: BackendConfig = {
 /** Upload-Post + autopilot fields from env (headless deployments). */
 function envPublishing(): Pick<
   BackendConfig,
-  "upApiKey" | "upUser" | "upPlatforms" | "autoEnabled" | "autoIntervalMin" | "autoPublish" | "autoChatId"
+  "upApiKey" | "upUser" | "upPlatforms" | "upFacebookPageId" | "autoEnabled" | "autoIntervalMin" | "autoPublish" | "autoChatId"
 > {
   return {
     upApiKey: process.env.UPLOAD_POST_API_KEY ?? "",
     upUser: process.env.UPLOAD_POST_USER ?? "",
     upPlatforms: process.env.UPLOAD_POST_PLATFORMS ?? UP_DEFAULT_PLATFORMS,
+    upFacebookPageId: process.env.UPLOAD_POST_FACEBOOK_PAGE_ID ?? "",
     autoEnabled: process.env.AUTOPILOT === "1" || process.env.AUTOPILOT === "true",
     autoIntervalMin: Number(process.env.AUTOPILOT_INTERVAL_MIN) || AUTO_DEFAULT_INTERVAL_MIN,
     autoPublish: process.env.AUTOPILOT_PUBLISH === "1" || process.env.AUTOPILOT_PUBLISH === "true",
@@ -220,6 +224,7 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
         upApiKey: row.upApiKey || process.env.UPLOAD_POST_API_KEY || "",
         upUser: row.upUser || process.env.UPLOAD_POST_USER || "",
         upPlatforms: row.upPlatforms || UP_DEFAULT_PLATFORMS,
+        upFacebookPageId: row.upFacebookPageId || process.env.UPLOAD_POST_FACEBOOK_PAGE_ID || "",
         autoEnabled: !!row.autoEnabled,
         autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
         autoPublish: !!row.autoPublish,
@@ -283,6 +288,7 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       upApiKey: cfg.upApiKey,
       upUser: cfg.upUser,
       upPlatforms: cfg.upPlatforms,
+      upFacebookPageId: cfg.upFacebookPageId,
       autoEnabled: cfg.autoEnabled,
       autoIntervalMin: cfg.autoIntervalMin,
       autoPublish: cfg.autoPublish,
@@ -317,6 +323,7 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       upApiKey: cfg.upApiKey,
       upUser: cfg.upUser,
       upPlatforms: cfg.upPlatforms,
+      upFacebookPageId: cfg.upFacebookPageId,
       autoEnabled: cfg.autoEnabled,
       autoIntervalMin: cfg.autoIntervalMin,
       autoPublish: cfg.autoPublish,

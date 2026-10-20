@@ -6,6 +6,11 @@
  *
  *   POST /api/upload                         multipart: user, platform[], video (URL ok), title
  *   GET  /api/uploadposts/status?request_id  poll an async upload
+ *   GET  /api/uploadposts/facebook/pages     the Facebook Pages on a profile
+ *
+ * Facebook needs facebook_page_id when the account manages more than one
+ * Page; without it the post goes nowhere. scheduled_date + timezone queue a
+ * post for later instead of publishing now.
  *
  * We always send async_upload=true with our own request_id: the API fetches
  * the video URL in the background, and a retry never double-posts.
@@ -33,6 +38,16 @@ export interface UploadPostConfig {
   apiKey: string;
   user: string;
   platforms: string[];
+  /** Facebook Page to post to; "" = pick automatically. */
+  facebookPageId?: string;
+}
+
+/** When to publish: local wall-clock time in an IANA time zone. */
+export interface PostSchedule {
+  /** "2026-10-21T09:30" (local time, no offset) */
+  date: string;
+  /** "America/New_York" */
+  timeZone: string;
 }
 
 export interface PlatformResult {
@@ -46,8 +61,11 @@ export interface PlatformResult {
 
 export interface UploadPostResult {
   requestId: string;
-  /** pending | queued | processing | in_progress | completed | failed */
+  /** pending | queued | processing | in_progress | completed | failed | scheduled */
   status: string;
+  /** When status is "scheduled": the local time it will post, and the job to edit or cancel. */
+  scheduledFor?: string;
+  jobId?: string;
   results: PlatformResult[];
 }
 
@@ -64,7 +82,12 @@ export function uploadPostConfig(cfg: BackendConfig): UploadPostConfig {
   if (!cfg.upUser.trim()) throw new Error("Set the Upload-Post profile (user) in Backend settings to publish.");
   const platforms = parsePlatforms(cfg.upPlatforms);
   if (!platforms.length) throw new Error("Pick at least one Upload-Post platform in Backend settings.");
-  return { apiKey: cfg.upApiKey.trim(), user: cfg.upUser.trim(), platforms };
+  return {
+    apiKey: cfg.upApiKey.trim(),
+    user: cfg.upUser.trim(),
+    platforms,
+    facebookPageId: (cfg.upFacebookPageId ?? "").trim(),
+  };
 }
 
 /** Title used on every platform: the song title plus a couple of tags, under YouTube's 100 chars. */
@@ -120,6 +143,81 @@ export function defaultFirstComment(courseUrl: string): string {
 }
 
 /**
+ * Check a requested schedule: a local "YYYY-MM-DDTHH:mm" in a real time zone,
+ * at least a few minutes ahead and within Upload-Post's 365 days. Returns the
+ * schedule to send, or an error message.
+ */
+export function checkSchedule(
+  date: string,
+  timeZone: string,
+  now: Date = new Date(),
+): { schedule: PostSchedule } | { error: string } {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(date.trim());
+  if (!m) return { error: "Pick a date and time to schedule the post." };
+  const tz = timeZone.trim() || "UTC";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+  } catch {
+    return { error: `Unknown time zone "${tz}".` };
+  }
+  // The wall-clock time in that zone, as a real instant.
+  const [, y, mo, d, h, mi, sec = "00"] = m;
+  const asUtc = Date.UTC(+y, +mo - 1, +d, +h, +mi, +sec);
+  const parts = Object.fromEntries(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      hourCycle: "h23",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    })
+      .formatToParts(new Date(asUtc))
+      .map((p) => [p.type, p.value]),
+  );
+  const zoneAsUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
+  const instant = asUtc - (zoneAsUtc - asUtc);
+  const ahead = instant - now.getTime();
+  if (ahead < 5 * 60_000) return { error: "Schedule it at least 5 minutes from now." };
+  if (ahead > 365 * 24 * 3_600_000) return { error: "Upload-Post schedules up to a year ahead." };
+  return { schedule: { date: `${y}-${mo}-${d}T${h}:${mi}:${sec}`, timeZone: tz } };
+}
+
+export interface FacebookPage {
+  id: string;
+  name: string;
+}
+
+/** The Facebook Pages connected to an Upload-Post profile. */
+export async function listFacebookPages(apiKey: string, profile: string): Promise<FacebookPage[]> {
+  const res = await fetch(`${UP_BASE}/uploadposts/facebook/pages?profile=${encodeURIComponent(profile)}`, {
+    headers: authHeaders(apiKey),
+    signal: AbortSignal.timeout(30_000),
+  });
+  const json = await readJson(res);
+  return (Array.isArray(json.pages) ? json.pages : [])
+    .map((p: { id?: unknown; name?: unknown }) => ({ id: String(p?.id ?? ""), name: String(p?.name ?? "") }))
+    .filter((p: FacebookPage) => p.id);
+}
+
+/**
+ * The Page to send as facebook_page_id: the saved one, else the first Page on
+ * the profile when there are several (with one Page, Upload-Post picks it).
+ */
+async function facebookPageFor(cfg: UploadPostConfig): Promise<string> {
+  if (cfg.facebookPageId) return cfg.facebookPageId;
+  try {
+    const pages = await listFacebookPages(cfg.apiKey, cfg.user);
+    return pages.length > 1 ? pages[0].id : "";
+  } catch (e) {
+    console.warn("[upload-post] couldn't list Facebook Pages", e);
+    return "";
+  }
+}
+
+/**
  * Post a public MP4 URL to every configured platform.
  *
  * firstComment is sent as Upload-Post's `first_comment` — posted under the
@@ -135,6 +233,8 @@ export async function uploadVideo(
     firstComment?: string;
     /** SEO copy for YouTube only (youtube-seo.ts); other platforms keep `title`. */
     youtube?: { title: string; description: string; tags: string[]; language?: string };
+    /** Publish later instead of now (checkSchedule). */
+    schedule?: PostSchedule;
   },
 ): Promise<UploadPostResult> {
   const requestId = randomUUID();
@@ -151,6 +251,14 @@ export async function uploadVideo(
     form.append("categoryId", "10"); // Music
     if (video.youtube.language) form.append("defaultLanguage", video.youtube.language);
   }
+  if (cfg.platforms.includes("facebook")) {
+    const pageId = await facebookPageFor(cfg);
+    if (pageId) form.append("facebook_page_id", pageId);
+  }
+  if (video.schedule) {
+    form.append("scheduled_date", video.schedule.date);
+    form.append("timezone", video.schedule.timeZone);
+  }
   const firstComment = video.firstComment?.trim();
   if (firstComment) form.append("first_comment", firstComment);
   form.append("async_upload", "true");
@@ -164,6 +272,15 @@ export async function uploadVideo(
   });
   const json = await readJson(res);
   const results = normalizeResults(json.results);
+  if (video.schedule) {
+    return {
+      requestId: String(json.request_id || requestId),
+      status: "scheduled",
+      scheduledFor: `${video.schedule.date.slice(0, 16).replace("T", " ")} (${video.schedule.timeZone})`,
+      jobId: json.job_id ? String(json.job_id) : undefined,
+      results: cfg.platforms.map((platform) => ({ platform, status: "scheduled" })),
+    };
+  }
   return {
     requestId: String(json.request_id || requestId),
     status: results.length ? "completed" : "queued",
@@ -217,7 +334,7 @@ export async function postMp4ToSocials(
     youtube: episodeId ? await youtubeCopyFor(episodeId) : youtube,
   });
   const deadline = Date.now() + giveUpMs;
-  while (!["completed", "failed"].includes(result.status) && Date.now() < deadline) {
+  while (!["completed", "failed", "scheduled"].includes(result.status) && Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, pollMs));
     result = await getUploadStatus(cfg.apiKey, result.requestId).catch(() => result);
   }
@@ -247,6 +364,7 @@ export function describeResults(results: PlatformResult[]): string {
       if (r.skipped) return `⏭️ ${r.platform} (not connected)`;
       if (r.success === false || r.status === "failed") return `❌ ${r.platform}${r.message ? ` — ${r.message}` : ""}`;
       if (r.success || r.status === "completed") return `✅ ${r.platform}`;
+      if (r.status === "scheduled") return `🗓️ ${r.platform}`;
       return `⏳ ${r.platform}`;
     })
     .join(" · ");

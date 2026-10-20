@@ -83,6 +83,7 @@ function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
     upApiKey: (cfg.upApiKey ?? "").trim(),
     upUser: (cfg.upUser ?? "").trim(),
     upPlatforms: parsePlatforms(cfg.upPlatforms ?? "").join(",") || UP_DEFAULT_PLATFORMS,
+    upFacebookPageId: String(cfg.upFacebookPageId ?? "").trim().replace(/[^0-9]/g, ""),
     autoEnabled: !!cfg.autoEnabled,
     // Never faster than every 15 minutes — each run is a full song render.
     autoIntervalMin: Math.min(24 * 60, Math.max(15, Math.round(Number(cfg.autoIntervalMin) || AUTO_DEFAULT_INTERVAL_MIN))),

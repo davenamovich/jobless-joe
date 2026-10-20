@@ -59,6 +59,7 @@ function cfg(url: string): BackendConfig {
     upApiKey: "",
     upUser: "",
     upPlatforms: "",
+    upFacebookPageId: "",
     autoEnabled: false,
     autoIntervalMin: 60,
     autoPublish: false,
