@@ -10,7 +10,8 @@
  *      waitForMp4()               P&R films it (25 credits)
  *      postMp4ToSocials()         Upload-Post → TikTok / Reels / Shorts …
  *
- * The scheduler is a one-minute tick started from instrumentation.ts. The
+ * The scheduler is a one-minute tick started from instrumentation.ts; it
+ * also drives the daily Morning Show (morning-autopilot.ts). The
  * last run time lives in the DB, so a restart doesn't fire an extra song.
  * One run at a time, ever.
  */
@@ -22,6 +23,7 @@ import { ensureAudioTrack } from "@/lib/tts-service";
 import { waitForMp4 } from "@/lib/pr-mcp";
 import { postMp4ToSocials } from "@/lib/upload-post";
 import { getTrendingIdeas, type TrendIdea } from "@/lib/trending";
+import { morningTick } from "@/lib/morning-autopilot";
 import { sendMessage } from "@/lib/telegram/types";
 import {
   DEFAULT_DURATION,
@@ -227,7 +229,10 @@ export async function autopilotTick(): Promise<void> {
 /** Start the one-minute ticker (idempotent). Called from instrumentation.ts. */
 export function startAutopilot(): void {
   if (state.timer) return;
-  state.timer = setInterval(() => void autopilotTick(), TICK_MS);
+  state.timer = setInterval(() => {
+    void autopilotTick();
+    void morningTick();
+  }, TICK_MS);
   // Don't keep a process alive just for the ticker.
   state.timer.unref?.();
   console.log("[autopilot] scheduler started");

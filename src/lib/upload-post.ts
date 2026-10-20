@@ -198,7 +198,15 @@ export async function postMp4ToSocials(
     giveUpMs = 5 * 60_000,
     firstComment,
     episodeId,
-  }: { pollMs?: number; giveUpMs?: number; firstComment?: string; episodeId?: string } = {},
+    youtube,
+  }: {
+    pollMs?: number;
+    giveUpMs?: number;
+    firstComment?: string;
+    episodeId?: string;
+    /** YouTube copy for a video without an episode (e.g. the Morning Show). */
+    youtube?: { title: string; description: string; tags: string[] };
+  } = {},
 ): Promise<{ requestId: string; summary: string }> {
   const backend = await loadBackendConfig();
   const cfg = uploadPostConfig(backend);
@@ -206,7 +214,7 @@ export async function postMp4ToSocials(
     url: mp4Url,
     title,
     firstComment: firstComment ?? defaultFirstComment(backend.courseUrl),
-    youtube: episodeId ? await youtubeCopyFor(episodeId) : undefined,
+    youtube: episodeId ? await youtubeCopyFor(episodeId) : youtube,
   });
   const deadline = Date.now() + giveUpMs;
   while (!["completed", "failed"].includes(result.status) && Date.now() < deadline) {
