@@ -95,6 +95,29 @@ Hey Joe, the rent is due.`;
     assert.match(prompt, /weather report/);
   });
 
+  it("flags clock-time lists and broken quotes, and asks for full sentences", () => {
+    const song = `[INTRO]
+Nine o'clock. Camera stuck on.
+I fix my tie in the dryer door.
+
+[VERSE 1]
+Ten: "Entry-level means fifteen years."
+Eleven: unpaid trial. "Use washer prices and cycle times.
+Build our workflow." She leaves. Light stays.
+
+[OUTRO]
+At three, my AI agent reads ad and transcript.
+At five, I send a six-hour consulting invoice.`;
+    assert.deepEqual(flagSuspectLines(song), [
+      'Ten: "Entry-level means fifteen years."',
+      'Eleven: unpaid trial. "Use washer prices and cycle times.',
+      'Build our workflow." She leaves. Light stays.',
+      "At three, my AI agent reads ad and transcript.",
+      "At five, I send a six-hour consulting invoice.",
+    ]);
+    assert.match(buildSenseEditPrompt({ lyrics: song, plan: null }), /notes with words missing/);
+  });
+
   it("applies fixes line by line, ignoring case and punctuation", () => {
     const fixes = parseLineFixes(
       '```json\n{"fixes":[{"line":"the potluck is now court — my aunt bangs a spoon like a gavel","fix":"At the family potluck my aunt asks how the job is going."},{"line":"[CHORUS]","fix":"x"},{"line":"not in the song","fix":"y"}]}\n```',
