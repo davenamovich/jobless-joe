@@ -30,9 +30,20 @@ import { digestSong, freshnessBlock, pickAngle, type RecentSong } from "@/lib/fr
 import { cleanYouTubeSeo } from "@/lib/youtube-service";
 import { seasonEpisodeFor } from "@/lib/season";
 import { loadArc } from "@/lib/ralph";
+import {
+  PLAN_SYSTEM,
+  SENSE_EDIT_SYSTEM,
+  buildPlanPrompt,
+  buildSenseEditPrompt,
+  parseSongPlan,
+  syncQuotes,
+  withPlan,
+  type SongPlan,
+} from "@/lib/song-plan";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+// Plan + song + sense edit (+ an occasional tighten) are up to four model calls.
+export const maxDuration = 180;
 
 interface GenerateBody {
   episodeKey: string;
@@ -426,8 +437,23 @@ export async function POST(req: NextRequest) {
   let raw = "";
   let usedModel = "";
   let usedBackend = "zai";
+  // === Writers' room: plan the story before writing a new song. ===
+  // A short call decides what happens in each section and how it ends, so
+  // the songwriter writes one clear story instead of improvising it inside a
+  // twenty-field JSON. If planning fails, the song is written without one.
+  let plan: SongPlan | null = null;
+  if (isNewSong) {
+    try {
+      const planned = await chat(PLAN_SYSTEM, buildPlanPrompt(userPrompt), backendCfg);
+      plan = parseSongPlan(planned.content);
+      if (!plan) console.warn("Song plan unusable; writing without one:", planned.content.slice(0, 300));
+    } catch (e) {
+      console.error("Song planning failed; writing without a plan", e);
+    }
+  }
+
   try {
-    const result = await chat(systemPrompt, userPrompt, backendCfg);
+    const result = await chat(systemPrompt, withPlan(userPrompt, plan), backendCfg);
     raw = result.content;
     usedModel = result.model;
     usedBackend = result.backend;
@@ -467,6 +493,38 @@ export async function POST(req: NextRequest) {
   let cleaned = sanitizeOutput(parsed);
   // A sign-off written inside the lyrics field would be sung as the ending.
   cleaned = { ...cleaned, lyrics: trimLyricSignoff(cleaned.lyrics) };
+
+  // === Script editor: fix lines that don't make sense. ===
+  // Reads the song against its plan and rewrites only broken lines. Kept
+  // only when it changed something, didn't grow the song and still ends on
+  // a real punchline.
+  const durationLabelForEdit = DURATIONS.find((d) => d.key === body.duration)?.label;
+  try {
+    const before = analyzeLyricFit(cleaned.lyrics, body.duration, durationLabelForEdit);
+    const edited = await chat(
+      SENSE_EDIT_SYSTEM,
+      buildSenseEditPrompt({ lyrics: cleaned.lyrics, plan, premise: cleaned.songPremise, language }),
+      backendCfg
+    );
+    const candidate = cleanLyricReply(edited.content);
+    const after = candidate ? analyzeLyricFit(candidate, body.duration, durationLabelForEdit) : null;
+    const sameShape =
+      !!after &&
+      after.words <= before.words + 4 &&
+      after.words >= before.words * 0.8 &&
+      after.overBy <= before.overBy &&
+      (!before.hasOutro || after.hasOutro) &&
+      hasPunchlineEnding(after);
+    if (candidate && sameShape && candidate.trim() !== cleaned.lyrics.trim()) {
+      cleaned = syncQuotes({ ...cleaned, lyrics: candidate });
+      console.log(`Lyrics sense-edited: ${before.words} -> ${after!.words} words`);
+    } else if (candidate && !sameShape) {
+      console.warn("Sense edit rejected (changed the song's shape)");
+    }
+  } catch (e) {
+    // A failed edit must never cost the user their song.
+    console.error("Sense edit failed", e);
+  }
 
   // === Make the song fit its own running time before anything is stored. ===
   // The audio engines get an exact number of seconds; a lyric that runs long
