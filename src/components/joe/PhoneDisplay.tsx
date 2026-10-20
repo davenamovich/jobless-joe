@@ -393,6 +393,56 @@ export function PhoneDisplay({ episodeId }: { episodeId?: string }) {
     lastSeekRef.current = positionSec;
   }, [positionSec, track?.audioUrl, track]);
 
+  // === The song on screen goes on the phone. ===
+  // Only a wall used to load the phone, so a freshly made song never showed
+  // up here. Whenever the studio shows a different episode, load it — unless
+  // a wall song is playing right now, which we don't cut off.
+  const loadTrack = usePlayback((s) => s.loadTrack);
+  useEffect(() => {
+    if (!episodeId) return;
+    const now = usePlayback.getState();
+    if (now.track?.episodeId === episodeId) return;
+    if (now.isPlaying && now.track?.wallItemId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`/api/episodes/${encodeURIComponent(episodeId)}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const j = await res.json();
+        const out = j.output ?? {};
+        const audio = await fetch(`/api/audio/${encodeURIComponent(episodeId)}`, { cache: "no-store" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        const ready = ((audio?.tracks ?? []) as { audioUrl?: string; voice?: string; durationSec?: number }[])
+          .filter((t) => t.audioUrl)
+          .pop();
+        if (cancelled || usePlayback.getState().track?.episodeId === episodeId) return;
+        loadTrack(
+          {
+            wallItemId: "",
+            episodeId,
+            episodeTitle: out.episodeTitle ?? "",
+            episodeDuration: out.duration ?? "",
+            brandColor: "",
+            emoji: "🎙️",
+            wallName: "",
+            lyrics: out.lyrics ?? "",
+            closingLine: out.closingLine ?? "",
+            voice: ready?.voice ?? "jam",
+            audioUrl: ready?.audioUrl ?? null,
+            audioDurationSec: ready?.durationSec ?? 0,
+          },
+          ""
+        );
+      } catch {
+        // Offline — the phone keeps whatever it had.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [episodeId, loadTrack]);
+
   // === Poll for audio URL while we wait for TTS to finish. ===
   useEffect(() => {
     if (!track || track.audioUrl) return;
