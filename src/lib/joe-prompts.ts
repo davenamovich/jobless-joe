@@ -204,8 +204,8 @@ export interface SongOutput {
   nextEpisodeTitle: string;
 
   /**
-   * Search-facing YouTube copy. Optional: episodes written before this field
-   * existed don't have it, and the uploader falls back to the episode title.
+   * Search-facing YouTube copy from older songs. New songs leave it out: the
+   * YouTube title and SEO are written at publish time (youtube-seo.ts).
    */
   youtube?: YouTubeSeo;
 
@@ -288,7 +288,6 @@ Write EVERY audience-facing field in ${lang.label}:
 - adCopy: primaryTexts, headlines, description, cta
 - videoBrief: visualOpening, performanceShot, onScreenCaptions, sceneChanges, visualPunchline, finalFrame
 - nextEpisodeTeaser, nextEpisodeTitle
-- youtube: title, description, hashtags, tags
 
 Keep these in English, always:
 - the brand names "Jobless Joe" and "Jobless Joe's Bootcamp"
@@ -572,12 +571,6 @@ B. Three alternative first-three-second hooks optimized to stop a social scroll.
 C. Facebook ad copy: 3 primary texts, 3 headlines, 1 short description, 1 natural CTA for Jobless Joe's Bootcamp.
 D. Video production brief: visual opening, suggested Joe performance shot, on-screen captions for funniest lines, scene changes, visual punchline, final frame featuring Jobless Joe's Bootcamp, suggested aspect ratio and caption-safe composition.
 E. Next-episode teaser line + suggested next episode title.
-F. YouTube search copy (the "youtube" object), written for people searching YouTube, not for people who already know Joe:
-   - title: under 70 characters. Lead with the searchable topic of THIS song (what Joe used AI for, or the job-hunt pain it mocks), then the hook. End with "| Jobless Joe" only if it still fits. No clickbait Joe can't deliver, no ALL CAPS, at most one emoji.
-   - description: 2 to 4 short lines. The first two lines are what search results show, so they must say plainly what the video is (a funny crooner song about …) and name the topic in words people type. Do not include lyrics, links or hashtags here; those are added separately.
-   - hashtags: exactly 3, each starting with #, no spaces. The first is #JoblessJoe; the other two are about this song's topic.
-   - tags: 8 to 12 short search phrases (2 to 4 words each) someone would type to find this video, e.g. the skill Joe used, the job-hunt situation, "funny ai song". Lowercase, no #.
-
 Production brief must be practical for AI-generated video workflows (9:16 vertical for Reels/Shorts, 1:1 for feed, caption-safe areas).
 
 =========================
@@ -621,12 +614,6 @@ The JSON must match this exact TypeScript type:
   },
   "nextEpisodeTeaser": string,
   "nextEpisodeTitle": string,
-  "youtube": {
-    "title": string,
-    "description": string,
-    "hashtags": [string, string, string],
-    "tags": [string]
-  },
   "storyBibleUpdate": {
     "currentSituation": string,
     "learnedSkills": [string],
