@@ -157,8 +157,9 @@ export const usePlayback = create<PlaybackState>((set, get) => ({
     set({
       track: { ...t, audioUrl: url, audioDurationSec: durationSec },
       audioLoading: false,
-      // Auto-start playback once the audio finally arrives.
-      isPlaying: true,
+      // A wall song starts once its audio arrives. The studio's own song
+      // doesn't, so it never sings over the "Your Song" player.
+      isPlaying: t.wallItemId ? true : get().isPlaying,
     });
   },
 

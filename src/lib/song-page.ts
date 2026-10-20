@@ -78,7 +78,7 @@ export function buildSongPageHtml(data: SongPageData): string {
   const audioFile = escapeHtml(data.audioFile);
   const downloadName = escapeHtml(data.downloadName);
   const fallbackDuration = niceTime(data.durationSec ?? 0);
-  const stage = data.stickman ? stickmanStageHtml(lyricsToBeats(data.lyrics), "#b8434f", data.lineStarts) : "";
+  const stage = data.stickman ? stickmanStageHtml(lyricsToBeats(data.lyrics), "#b8434f", { starts: data.lineStarts ?? undefined }) : "";
 
   return `<!DOCTYPE html>
 <html lang="en">

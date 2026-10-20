@@ -2,6 +2,7 @@
 import { afterEach, describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
+  checkSchedule,
   defaultFirstComment,
   describeResults,
   normalizeResults,
@@ -84,6 +85,70 @@ describe("uploadVideo first comment", () => {
     assert.equal((await sentForm(undefined)).has("first_comment"), false);
     assert.equal((await sentForm("")).has("first_comment"), false);
     assert.equal((await sentForm("   ")).has("first_comment"), false);
+  });
+});
+
+describe("facebook and scheduling", () => {
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
+  /** uploadVideo against a stub fetch: the pages list, then the upload form. */
+  async function run(
+    cfg: { apiKey: string; user: string; platforms: string[]; facebookPageId?: string },
+    pages: { id: string; name: string }[],
+    schedule?: { date: string; timeZone: string },
+  ) {
+    let form: FormData | undefined;
+    const urls: string[] = [];
+    globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+      urls.push(String(url));
+      if (String(url).includes("/facebook/pages")) return new Response(JSON.stringify({ success: true, pages }), { status: 200 });
+      form = init?.body as FormData;
+      return new Response(JSON.stringify({ success: true, request_id: "r1", job_id: "j9" }), { status: 200 });
+    }) as typeof fetch;
+    const result = await uploadVideo(cfg, { url: "https://cdn/x.mp4", title: "Ask Joe", schedule });
+    return { form: form!, urls, result };
+  }
+
+  it("sends the saved Facebook Page without looking it up", async () => {
+    const { form, urls } = await run({ apiKey: "k", user: "joe", platforms: ["facebook"], facebookPageId: "123" }, []);
+    assert.equal(form.get("facebook_page_id"), "123");
+    assert.equal(urls.length, 1);
+  });
+
+  it("picks the first Page when the profile has several and none is saved", async () => {
+    const pages = [{ id: "111", name: "Jobless Joe" }, { id: "222", name: "Dave" }];
+    assert.equal((await run({ apiKey: "k", user: "joe", platforms: ["facebook"] }, pages)).form.get("facebook_page_id"), "111");
+    assert.equal(
+      (await run({ apiKey: "k", user: "joe", platforms: ["facebook"] }, pages.slice(0, 1))).form.has("facebook_page_id"),
+      false,
+    );
+    assert.equal((await run({ apiKey: "k", user: "joe", platforms: ["tiktok"] }, pages)).form.has("facebook_page_id"), false);
+  });
+
+  it("schedules with scheduled_date and timezone", async () => {
+    const { form, result } = await run({ apiKey: "k", user: "joe", platforms: ["tiktok", "facebook"], facebookPageId: "1" }, [], {
+      date: "2026-10-21T09:30:00",
+      timeZone: "America/New_York",
+    });
+    assert.equal(form.get("scheduled_date"), "2026-10-21T09:30:00");
+    assert.equal(form.get("timezone"), "America/New_York");
+    assert.equal(result.status, "scheduled");
+    assert.equal(result.jobId, "j9");
+    assert.match(describeResults(result.results), /🗓️ tiktok · 🗓️ facebook/);
+  });
+
+  it("checkSchedule wants a future local time in a real zone", () => {
+    const now = new Date(Date.UTC(2026, 9, 20, 14, 0)); // 10:00 in New York
+    assert.deepEqual(checkSchedule("2026-10-20T11:00", "America/New_York", now), {
+      schedule: { date: "2026-10-20T11:00:00", timeZone: "America/New_York" },
+    });
+    assert.match((checkSchedule("2026-10-20T09:59", "America/New_York", now) as { error: string }).error, /5 minutes/);
+    assert.match((checkSchedule("2028-01-01T09:00", "UTC", now) as { error: string }).error, /year/);
+    assert.match((checkSchedule("tomorrow", "UTC", now) as { error: string }).error, /Pick a date/);
+    assert.match((checkSchedule("2026-10-21T09:00", "Mars/Base", now) as { error: string }).error, /time zone/);
   });
 });
 

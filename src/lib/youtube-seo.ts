@@ -150,6 +150,8 @@ function seoUserPrompt(input: { output: SongOutput; topic?: string | null; theme
     input.topic ? `Topic: ${input.topic}` : "",
     `Language: ${getLanguage(input.language).label}`,
     `Duration: ${o.duration}`,
+    o.songPremise ? `What the song is about: ${o.songPremise}` : "",
+    o.viralHook ? `Most quotable line: ${o.viralHook}` : "",
     o.closingLine ? `Closing line: ${o.closingLine}` : "",
     o.hooks?.length ? `Scroll-stopping hooks: ${o.hooks.join(" | ")}` : "",
     `Lyrics:\n${(o.lyrics ?? "").slice(0, 2500)}`,

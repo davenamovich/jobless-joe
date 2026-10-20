@@ -5,6 +5,8 @@ import {
   COURSE_DEFAULT_URL,
   PR_MCP_DEFAULT_URL,
   AUTO_DEFAULT_INTERVAL_MIN,
+  MORNING_DEFAULT_COUNT,
+  MORNING_DEFAULT_HOUR,
   UP_DEFAULT_PLATFORMS,
   loadBackendConfig,
   saveBackendConfig,
@@ -33,6 +35,17 @@ function normalizeUrl(raw: string, fallback = ""): string {
   let url = (raw ?? "").trim().replace(/\/+$/, "");
   if (url && !/^https?:\/\//i.test(url)) url = `https://${url}`;
   return url || fallback;
+}
+
+/** An IANA zone the runtime knows, else "" (server time). */
+function validTimeZone(tz: string): string {
+  if (!tz) return "";
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: tz });
+    return tz;
+  } catch {
+    return "";
+  }
 }
 
 function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
@@ -71,21 +84,31 @@ function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
     upUser: (cfg.upUser ?? "").trim(),
     upPlatforms: parsePlatforms(cfg.upPlatforms ?? "").join(",") || UP_DEFAULT_PLATFORMS,
     groqApiKey: (cfg.groqApiKey ?? "").trim(),
+    upFacebookPageId: String(cfg.upFacebookPageId ?? "").trim().replace(/[^0-9]/g, ""),
     autoEnabled: !!cfg.autoEnabled,
     // Never faster than every 15 minutes — each run is a full song render.
     autoIntervalMin: Math.min(24 * 60, Math.max(15, Math.round(Number(cfg.autoIntervalMin) || AUTO_DEFAULT_INTERVAL_MIN))),
     autoPublish: !!cfg.autoPublish,
     autoChatId: String(cfg.autoChatId ?? "").trim(),
+    fishApiKey: (cfg.fishApiKey ?? "").trim(),
+    fishJoeVoiceId: (cfg.fishJoeVoiceId ?? "").trim(),
+    fishGuestVoiceId: (cfg.fishGuestVoiceId ?? "").trim(),
+    morningEnabled: !!cfg.morningEnabled,
+    morningHour: Math.min(23, Math.max(0, Math.round(Number(cfg.morningHour ?? MORNING_DEFAULT_HOUR)) || 0)),
+    morningCount: Math.min(10, Math.max(3, Math.round(Number(cfg.morningCount) || MORNING_DEFAULT_COUNT))),
+    morningTimeZone: validTimeZone(String(cfg.morningTimeZone ?? "").trim()),
   };
 }
 
 /** Never hand API keys to the browser — only whether they exist. */
 function publicConfig(cfg: BackendConfig) {
-  const { openaiApiKey, prApiKey, ytClientSecret, ytRefreshToken, upApiKey, groqApiKey, ...rest } = cfg;
+  const { openaiApiKey, prApiKey, ytClientSecret, ytRefreshToken, upApiKey, fishApiKey, groqApiKey, ...rest } = cfg;
   return {
     ...rest,
     hasGroqKey: !!groqApiKey,
     groqKeyMasked: groqApiKey ? maskKey(groqApiKey) : "",
+    hasFishKey: !!fishApiKey,
+    fishKeyMasked: fishApiKey ? maskKey(fishApiKey) : "",
     hasUpKey: !!upApiKey,
     upKeyMasked: upApiKey ? maskKey(upApiKey) : "",
     hasApiKey: !!openaiApiKey,
@@ -129,6 +152,7 @@ export async function PATCH(req: NextRequest) {
   if (!body.ytClientSecret) merged.ytClientSecret = current.ytClientSecret;
   if (!body.upApiKey) merged.upApiKey = current.upApiKey;
   if (!body.groqApiKey) merged.groqApiKey = current.groqApiKey;
+  if (!body.fishApiKey) merged.fishApiKey = current.fishApiKey;
 
   const cfg = sanitize(merged);
   try {

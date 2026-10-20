@@ -62,6 +62,8 @@ export interface BackendConfig {
   upUser: string;
   /** Comma-separated platform[] values */
   upPlatforms: string;
+  /** Facebook Page ID for Upload-Post (needed when several Pages are connected) */
+  upFacebookPageId: string;
 
   /** Groq API key for Whisper transcription */
   groqApiKey: string;
@@ -73,9 +75,25 @@ export interface BackendConfig {
   autoPublish: boolean;
   /** Telegram chat that hears about autopilot runs */
   autoChatId: string;
+
+  /** Fish Audio TTS for the sit-down videos (key + voice model ids) */
+  fishApiKey: string;
+  fishJoeVoiceId: string;
+  fishGuestVoiceId: string;
+
+  /** Morning Show autopilot: make and post the show once a day */
+  morningEnabled: boolean;
+  /** Local hour (0-23) in morningTimeZone */
+  morningHour: number;
+  /** Top posts per show */
+  morningCount: number;
+  /** IANA time zone; empty = the server's */
+  morningTimeZone: string;
 }
 
 export const UP_DEFAULT_PLATFORMS = "tiktok,instagram,youtube";
+export const MORNING_DEFAULT_HOUR = 7;
+export const MORNING_DEFAULT_COUNT = 5;
 export const AUTO_DEFAULT_INTERVAL_MIN = 60;
 
 export const ACE_STEP_DEFAULT_URL = "http://localhost:8001";
@@ -114,21 +132,30 @@ const DEFAULT_CONFIG: BackendConfig = {
   upUser: "",
   upPlatforms: UP_DEFAULT_PLATFORMS,
   groqApiKey: "",
+  upFacebookPageId: "",
   autoEnabled: false,
   autoIntervalMin: AUTO_DEFAULT_INTERVAL_MIN,
   autoPublish: false,
   autoChatId: "",
+  fishApiKey: "",
+  fishJoeVoiceId: "",
+  fishGuestVoiceId: "",
+  morningEnabled: false,
+  morningHour: MORNING_DEFAULT_HOUR,
+  morningCount: MORNING_DEFAULT_COUNT,
+  morningTimeZone: "",
 };
 
 /** Upload-Post + autopilot fields from env (headless deployments). */
 function envPublishing(): Pick<
   BackendConfig,
-  "upApiKey" | "upUser" | "upPlatforms" | "autoEnabled" | "autoIntervalMin" | "autoPublish" | "autoChatId"
+  "upApiKey" | "upUser" | "upPlatforms" | "upFacebookPageId" | "autoEnabled" | "autoIntervalMin" | "autoPublish" | "autoChatId"
 > {
   return {
     upApiKey: process.env.UPLOAD_POST_API_KEY ?? "",
     upUser: process.env.UPLOAD_POST_USER ?? "",
     upPlatforms: process.env.UPLOAD_POST_PLATFORMS ?? UP_DEFAULT_PLATFORMS,
+    upFacebookPageId: process.env.UPLOAD_POST_FACEBOOK_PAGE_ID ?? "",
     autoEnabled: process.env.AUTOPILOT === "1" || process.env.AUTOPILOT === "true",
     autoIntervalMin: Number(process.env.AUTOPILOT_INTERVAL_MIN) || AUTO_DEFAULT_INTERVAL_MIN,
     autoPublish: process.env.AUTOPILOT_PUBLISH === "1" || process.env.AUTOPILOT_PUBLISH === "true",
@@ -136,78 +163,108 @@ function envPublishing(): Pick<
   };
 }
 
-/** Read the current backend config from DB, falling back to env vars. */
+/** Defaults for a fresh install: the env vars a headless deployment sets. */
+function envDefaults(): BackendConfig {
+  return {
+    activeBackend: "zai",
+    openaiBaseUrl: "",
+    openaiApiKey: "",
+    openaiModel: "",
+    audioEngine: DEFAULT_CONFIG.audioEngine,
+    aceStepBaseUrl: process.env.ACESTEP_BASE_URL ?? ACE_STEP_DEFAULT_URL,
+    aceStepModel: process.env.ACESTEP_MODEL ?? ACE_STEP_DEFAULT_MODEL,
+    prMcpUrl: process.env.PR_MCP_URL ?? PR_MCP_DEFAULT_URL,
+    prApiKey: process.env.PR_API_KEY ?? "",
+    prRef: process.env.PR_REF ?? "",
+    publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
+    courseUrl: process.env.COURSE_URL ?? COURSE_DEFAULT_URL,
+    ytClientId: process.env.YT_CLIENT_ID ?? "",
+    ytClientSecret: process.env.YT_CLIENT_SECRET ?? "",
+    ytRefreshToken: process.env.YT_REFRESH_TOKEN ?? "",
+    ytChannelId: "",
+    ytChannelTitle: "",
+    ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
+    ...envPublishing(),
+    groqApiKey: process.env.GROQ_API_KEY ?? "",
+    fishApiKey: process.env.FISH_AUDIO_API_KEY ?? "",
+    fishJoeVoiceId: process.env.FISH_JOE_VOICE_ID ?? "",
+    fishGuestVoiceId: process.env.FISH_GUEST_VOICE_ID ?? "",
+    morningEnabled: false,
+    morningHour: MORNING_DEFAULT_HOUR,
+    morningCount: MORNING_DEFAULT_COUNT,
+    morningTimeZone: process.env.TZ ?? "",
+  };
+}
+
+/**
+ * Read the current backend config: the Settings saved in the DB, else env
+ * defaults. AI_BACKEND / OPENAI_* (when set and non-empty) still pin the text
+ * model for headless deployments, but only those fields: P&R, YouTube,
+ * Upload-Post and autopilot always come from what was saved in Settings.
+ */
 export async function loadBackendConfig(): Promise<BackendConfig> {
-  // Env wins for headless / pre-configured deployments.
-  const envBackend = (process.env.AI_BACKEND as BackendKey | undefined) ?? undefined;
-  const envUrl = process.env.OPENAI_BASE_URL;
-  const envKey = process.env.OPENAI_API_KEY;
-  const envModel = process.env.OPENAI_MODEL;
-  const envAudioEngine =
-    process.env.AUDIO_ENGINE === "acestep" || process.env.AUDIO_ENGINE === "zai"
-      ? (process.env.AUDIO_ENGINE as AudioEngine)
-      : undefined;
-
-  if (envBackend || envUrl) {
-    return {
-      activeBackend: envBackend ?? (envUrl ? "openai-compat" : "zai"),
-      openaiBaseUrl: envUrl ?? "",
-      openaiApiKey: envKey ?? "",
-      openaiModel: envModel ?? "",
-      audioEngine: envAudioEngine ?? DEFAULT_CONFIG.audioEngine,
-      aceStepBaseUrl: process.env.ACESTEP_BASE_URL ?? ACE_STEP_DEFAULT_URL,
-      aceStepModel: process.env.ACESTEP_MODEL ?? ACE_STEP_DEFAULT_MODEL,
-      prMcpUrl: process.env.PR_MCP_URL ?? PR_MCP_DEFAULT_URL,
-      prApiKey: process.env.PR_API_KEY ?? "",
-      prRef: process.env.PR_REF ?? "",
-      publicBaseUrl: process.env.PUBLIC_BASE_URL ?? "",
-      courseUrl: process.env.COURSE_URL ?? COURSE_DEFAULT_URL,
-      ytClientId: process.env.YT_CLIENT_ID ?? "",
-      ytClientSecret: process.env.YT_CLIENT_SECRET ?? "",
-      ytRefreshToken: process.env.YT_REFRESH_TOKEN ?? "",
-      ytChannelId: "",
-      ytChannelTitle: "",
-      ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
-      groqApiKey: process.env.GROQ_API_KEY ?? "",
-      ...envPublishing(),
-    };
-  }
-
-  // Otherwise read from DB (singleton row "current").
+  let cfg: BackendConfig;
   try {
     const row = await db.backendConfig.findUnique({ where: { id: "current" } });
-    if (!row) return DEFAULT_CONFIG;
-    return {
-      activeBackend: (row.activeBackend as BackendKey) ?? "zai",
-      openaiBaseUrl: row.openaiBaseUrl || "",
-      openaiApiKey: row.openaiApiKey || "",
-      openaiModel: row.openaiModel || "",
-      audioEngine: (row.audioEngine as AudioEngine) ?? "zai",
-      aceStepBaseUrl: row.aceStepBaseUrl || ACE_STEP_DEFAULT_URL,
-      aceStepModel: row.aceStepModel || ACE_STEP_DEFAULT_MODEL,
-      prMcpUrl: row.prMcpUrl || PR_MCP_DEFAULT_URL,
-      prApiKey: row.prApiKey || "",
-      prRef: row.prRef || "",
-      publicBaseUrl: row.publicBaseUrl || "",
-      courseUrl: row.courseUrl || COURSE_DEFAULT_URL,
-      ytClientId: row.ytClientId || "",
-      ytClientSecret: row.ytClientSecret || "",
-      ytRefreshToken: row.ytRefreshToken || "",
-      ytChannelId: row.ytChannelId || "",
-      ytChannelTitle: row.ytChannelTitle || "",
-      ytPrivacy: row.ytPrivacy || "unlisted",
-      upApiKey: row.upApiKey || process.env.UPLOAD_POST_API_KEY || "",
-      upUser: row.upUser || process.env.UPLOAD_POST_USER || "",
-      upPlatforms: row.upPlatforms || UP_DEFAULT_PLATFORMS,
-      groqApiKey: row.groqApiKey || process.env.GROQ_API_KEY || "",
-      autoEnabled: !!row.autoEnabled,
-      autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
-      autoPublish: !!row.autoPublish,
-      autoChatId: row.autoChatId || "",
-    };
+    if (row) {
+      cfg = {
+        activeBackend: (row.activeBackend as BackendKey) ?? "zai",
+        openaiBaseUrl: row.openaiBaseUrl || "",
+        openaiApiKey: row.openaiApiKey || "",
+        openaiModel: row.openaiModel || "",
+        audioEngine: (row.audioEngine as AudioEngine) ?? "zai",
+        aceStepBaseUrl: row.aceStepBaseUrl || ACE_STEP_DEFAULT_URL,
+        aceStepModel: row.aceStepModel || ACE_STEP_DEFAULT_MODEL,
+        prMcpUrl: row.prMcpUrl || PR_MCP_DEFAULT_URL,
+        prApiKey: row.prApiKey || "",
+        prRef: row.prRef || "",
+        publicBaseUrl: row.publicBaseUrl || "",
+        courseUrl: row.courseUrl || COURSE_DEFAULT_URL,
+        ytClientId: row.ytClientId || "",
+        ytClientSecret: row.ytClientSecret || "",
+        ytRefreshToken: row.ytRefreshToken || "",
+        ytChannelId: row.ytChannelId || "",
+        ytChannelTitle: row.ytChannelTitle || "",
+        ytPrivacy: row.ytPrivacy || "unlisted",
+        upApiKey: row.upApiKey || process.env.UPLOAD_POST_API_KEY || "",
+        upUser: row.upUser || process.env.UPLOAD_POST_USER || "",
+        upPlatforms: row.upPlatforms || UP_DEFAULT_PLATFORMS,
+        upFacebookPageId: row.upFacebookPageId || process.env.UPLOAD_POST_FACEBOOK_PAGE_ID || "",
+        autoEnabled: !!row.autoEnabled,
+        autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
+        autoPublish: !!row.autoPublish,
+        autoChatId: row.autoChatId || "",
+        groqApiKey: row.groqApiKey || process.env.GROQ_API_KEY || "",
+        fishApiKey: row.fishApiKey || process.env.FISH_AUDIO_API_KEY || "",
+        fishJoeVoiceId: row.fishJoeVoiceId || process.env.FISH_JOE_VOICE_ID || "",
+        fishGuestVoiceId: row.fishGuestVoiceId || process.env.FISH_GUEST_VOICE_ID || "",
+        morningEnabled: !!row.morningEnabled,
+        morningHour: row.morningHour ?? MORNING_DEFAULT_HOUR,
+        morningCount: row.morningCount || MORNING_DEFAULT_COUNT,
+        morningTimeZone: row.morningTimeZone || "",
+      };
+    } else {
+      cfg = envDefaults();
+    }
   } catch {
-    return DEFAULT_CONFIG;
+    cfg = envDefaults();
   }
+
+  const envBackend = process.env.AI_BACKEND?.trim() as BackendKey | undefined;
+  const envUrl = process.env.OPENAI_BASE_URL?.trim();
+  if (envBackend || envUrl) {
+    cfg = {
+      ...cfg,
+      activeBackend: envBackend || "openai-compat",
+      openaiBaseUrl: envUrl || cfg.openaiBaseUrl,
+      openaiApiKey: process.env.OPENAI_API_KEY?.trim() || cfg.openaiApiKey,
+      openaiModel: process.env.OPENAI_MODEL?.trim() || cfg.openaiModel,
+    };
+  }
+  if (process.env.AUDIO_ENGINE === "acestep" || process.env.AUDIO_ENGINE === "zai") {
+    cfg = { ...cfg, audioEngine: process.env.AUDIO_ENGINE as AudioEngine };
+  }
+  return cfg;
 }
 
 /** Persist a new backend config to the DB. */
@@ -238,10 +295,18 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       upUser: cfg.upUser,
       upPlatforms: cfg.upPlatforms,
       groqApiKey: cfg.groqApiKey,
+      upFacebookPageId: cfg.upFacebookPageId,
       autoEnabled: cfg.autoEnabled,
       autoIntervalMin: cfg.autoIntervalMin,
       autoPublish: cfg.autoPublish,
       autoChatId: cfg.autoChatId,
+      fishApiKey: cfg.fishApiKey,
+      fishJoeVoiceId: cfg.fishJoeVoiceId,
+      fishGuestVoiceId: cfg.fishGuestVoiceId,
+      morningEnabled: cfg.morningEnabled,
+      morningHour: cfg.morningHour,
+      morningCount: cfg.morningCount,
+      morningTimeZone: cfg.morningTimeZone,
     },
     update: {
       activeBackend: cfg.activeBackend,
@@ -266,10 +331,18 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       upUser: cfg.upUser,
       upPlatforms: cfg.upPlatforms,
       groqApiKey: cfg.groqApiKey,
+      upFacebookPageId: cfg.upFacebookPageId,
       autoEnabled: cfg.autoEnabled,
       autoIntervalMin: cfg.autoIntervalMin,
       autoPublish: cfg.autoPublish,
       autoChatId: cfg.autoChatId,
+      fishApiKey: cfg.fishApiKey,
+      fishJoeVoiceId: cfg.fishJoeVoiceId,
+      fishGuestVoiceId: cfg.fishGuestVoiceId,
+      morningEnabled: cfg.morningEnabled,
+      morningHour: cfg.morningHour,
+      morningCount: cfg.morningCount,
+      morningTimeZone: cfg.morningTimeZone,
     },
   });
 }

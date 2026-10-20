@@ -1,8 +1,8 @@
 /**
  * Stickman video page — a 9:16, full-screen "music video" of a finished
- * song: stick-figure Joe acts out each lyric line on a crooner stage while
- * the MP3 plays, under a TV that flips to a chart about each line
- * (lib/stickman-tv.ts). Published to here.now as a temp page first; if it looks
+ * song: stick-figure Joe acts out each lyric line while the MP3 plays, on
+ * ink-drawn sets that follow the lyrics (stickman-scenes.ts), ending on his
+ * punchline. Published to here.now as a temp page first; if it looks
  * right, the same page is filmed to MP4 by Plunder & Riffle's request_mp4.
  *
  * Recorder contract (meme-loop-engine's video/recorder.ts):
@@ -14,11 +14,12 @@
  * block autoplay with sound), and Joe follows the song's own clock.
  */
 
-import { lyricsToBeats, type StickmanBeat } from "./stickman";
 import { STICKMAN_STAGE_CSS, stickmanStageHtml, stickmanStageScript } from "./stickman-rig";
-import { TV_CSS, TV_JS, tvHtml } from "./stickman-tv";
+import { keywordScenes, planTimeline, type Scene } from "./stickman-scenes";
 
 export interface StickmanVideoData {
+  /** The storyboard (stickman-scene-llm.ts); the keyword scenes when absent. */
+  scenes?: Scene[];
   title: string;
   episodeLabel: string;
   lyrics: string;
@@ -26,7 +27,7 @@ export interface StickmanVideoData {
   audioFile: string;
   /** Best guess at the song length; the page corrects it once the audio loads. */
   durationSec: number;
-  /** Measured start of each lyric beat (0..1 of the song); absent = word-count estimate. */
+  /** Measured start of each scene (0..1 of the song, from Whisper); used when it fits the scenes, else planTimeline's estimate. */
   lineStarts?: number[] | null;
 }
 
@@ -54,11 +55,13 @@ function esc(s: string): string {
 export function buildStickmanVideoHtml(data: StickmanVideoData): string {
   const title = esc(data.title || "Untitled Song");
   const label = esc(data.episodeLabel || "Jobless Joe");
-  const parsed = lyricsToBeats(data.lyrics);
-  const beats: StickmanBeat[] = parsed.length ? parsed : [{ text: data.title || "", pose: "sing", expression: "smug", prop: "mic" }];
-  const starts = parsed.length ? data.lineStarts : null;
-  const stage = stickmanStageHtml(beats, "#b8434f", starts);
-  const tv = tvHtml(beats, data.title || "Untitled Song", starts);
+  const planned = data.scenes?.length ? data.scenes : keywordScenes(data.lyrics);
+  const scenes: Scene[] = planned.length ? planned : [{ text: data.title || "", pose: "sing", expression: "smug", prop: "mic", set: "stage" }];
+  // Fractions of the track, so they still line up once the page reads the real length.
+  const timeline = planTimeline(scenes, data.durationSec || 60);
+  const stage = stickmanStageHtml(scenes, "#b8434f", {
+    starts: data.lineStarts && data.lineStarts.length === scenes.length ? data.lineStarts : timeline.map((t) => t.at),
+  });
   const durationMs = Math.max(5000, Math.round((data.durationSec || 60) * 1000));
 
   return `<!DOCTYPE html>
@@ -80,10 +83,8 @@ export function buildStickmanVideoHtml(data: StickmanVideoData): string {
   .ep{font:600 clamp(10px,1.4vh,13px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);text-align:center}
   .sm-stage{--sm-ink:var(--ink);--sm-paper:var(--panel);--sm-accent:var(--gold)}
 ${STICKMAN_STAGE_CSS}
-  .sm-stage{flex:1;margin:1.2vh 0 0;border:0;border-radius:0;background:radial-gradient(55% 60% at 50% 18%,rgba(255,236,196,.17),transparent 72%);display:flex;flex-direction:column;justify-content:center;min-height:0}
-  .sm-joe{max-height:36vh}
-${TV_CSS}
-  .tv{margin-top:6.5vh}
+  .sm-stage{flex:1;margin:2.4vh 0 0;border:0;border-radius:0;background:radial-gradient(55% 60% at 50% 18%,rgba(255,236,196,.17),transparent 72%);display:flex;flex-direction:column;justify-content:center;min-height:0}
+  .sm-joe{max-height:52vh;overflow:hidden}
   .sm-line{font-style:italic;font-size:clamp(20px,3.3vh,36px);line-height:1.3;min-height:4.2em;padding:1.2vh 4% 0}
   .sm-sec{top:0;left:50%;transform:translateX(-50%)}
   .bar{height:4px;border-radius:99px;background:rgba(246,236,218,.14);overflow:hidden;margin-top:2vh}
@@ -106,7 +107,6 @@ ${TV_CSS}
   <div class="eyebrow">Jobless Joe</div>
   <h1>${title}</h1>
   <div class="ep">${label}</div>
-  ${tv}
   ${stage}
   <div class="bar"><i id="prog"></i></div>
   <div class="foot">Crooner Song Engine</div>
@@ -115,7 +115,6 @@ ${TV_CSS}
 <div class="end" id="end"><h2>${title}</h2><p>Jobless Joe</p></div>
 <audio id="a" preload="auto" src="${esc(data.audioFile)}"></audio>
 ${stickmanStageScript("a", { external: true })}
-<script>${TV_JS}</script>
 <script>
 (function () {
   var RECORD = /[?&]record=1\\b/.test(location.search);
@@ -128,7 +127,7 @@ ${stickmanStageScript("a", { external: true })}
   var prog = document.getElementById("prog");
   var end = document.getElementById("end");
   var tap = document.getElementById("tap");
-  var stage = window.joeStage, tv = window.joeTv;
+  var stage = window.joeStage;
 
   // The real length, once the browser has read it.
   a.addEventListener("loadedmetadata", function () {
@@ -154,7 +153,6 @@ ${stickmanStageScript("a", { external: true })}
     var ms = clock();
     var playing = started && ms < durMs && (RECORD || !a.paused);
     if (stage) stage.update(Math.min(ms, durMs), durMs, playing);
-    if (tv) tv.update(Math.min(ms, durMs), durMs);
     prog.style.width = (Math.min(1, ms / durMs) * 100).toFixed(2) + "%";
     if (ms >= durMs) end.classList.add("on");
     if (!started || ms < durMs + END_MS) requestAnimationFrame(tick);

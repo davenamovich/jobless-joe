@@ -2,21 +2,18 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import {
   ACTIONS,
-  buildLyricsSystemPrompt,
+  isEpisodeKey,
   buildSystemPrompt,
   buildTightenPrompt,
   buildUserPrompt,
-  cleanLyricsForSinging,
   DURATIONS,
   EMPTY_STORY_BIBLE,
-  EPISODES,
   INTENSITIES,
   MAX_SCRIPT_CHARS,
   MIN_SCRIPT_CHARS,
   TARGETS,
   type ActionKey,
   type DurationKey,
-  type GenerateRequest,
   type IntensityKey,
   type SongOutput,
   type StoryBible,
@@ -30,9 +27,24 @@ import { CROONER_STYLES } from "@/lib/crooner-styles";
 import { DEFAULT_LANGUAGE, isLanguageKey } from "@/lib/languages";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { digestSong, freshnessBlock, pickAngle, type RecentSong } from "@/lib/freshness";
+import { cleanYouTubeSeo } from "@/lib/youtube-service";
+import { seasonEpisodeFor } from "@/lib/season";
+import { loadArc } from "@/lib/ralph";
+import {
+  PLAN_SYSTEM,
+  SENSE_EDIT_SYSTEM,
+  buildPlanPrompt,
+  buildSenseEditPrompt,
+  applyLineFixes,
+  parseLineFixes,
+  parseSongPlan,
+  syncQuotes,
+  withPlan,
+  type SongPlan,
+} from "@/lib/song-plan";
 
 export const runtime = "nodejs";
-// Up to three model calls now: lyrics, tightening, then the episode package.
+// Plan + song + sense edit (+ an occasional tighten) are up to four model calls.
 export const maxDuration = 180;
 
 interface GenerateBody {
@@ -46,6 +58,11 @@ interface GenerateBody {
   croonerStyle?: string;
   language?: string;
   action: ActionKey;
+  /**
+   * The song a refine action (funnier, continue…) works on. Without it the
+   * newest episode in the DB is used, which may be another chat's song.
+   */
+  episodeId?: string;
 }
 
 /** Pull a fresh Story Bible out of the DB (or return the default one). */
@@ -95,16 +112,22 @@ async function saveStoryBible(sb: SongOutput["storyBibleUpdate"], episodeCount: 
   });
 }
 
-/** Find the most recent episode (any action) to use as context for refinements. */
-async function loadLastEpisode(): Promise<{
+/**
+ * The episode a refinement works on: the one asked for, else the most recent.
+ */
+async function loadLastEpisode(episodeId?: string): Promise<{
   title: string;
   lyrics: string;
   closingLine: string;
   nextEpisodeTeaser: string;
 } | null> {
-  const last = await db.episode.findFirst({
-    orderBy: { createdAt: "desc" },
-  });
+  const last =
+    (episodeId
+      ? await db.episode.findUnique({ where: { id: episodeId } })
+      : null) ??
+    (await db.episode.findFirst({
+      orderBy: { createdAt: "desc" },
+    }));
   if (!last) return null;
   try {
     const out: SongOutput = JSON.parse(last.output);
@@ -241,77 +264,6 @@ function hasSingableLastLine(line: string): boolean {
 }
 
 /**
- * Make the song fit its own running time before anything is stored.
- *
- * The audio engines get an exact number of seconds; a lyric that runs long
- * has its ending clipped mid-line. So measure against the budget for the
- * requested duration and, when the song overshoots or never closes, ask the
- * editor pass for the same song tightened to fit. A failed or worse edit
- * keeps the original.
- */
-async function fitToDuration(
-  lyrics: string,
-  before: LyricFit,
-  durationKey: DurationKey,
-  durationLabel: string | undefined,
-  systemPrompt: string,
-  language: string,
-  backendCfg: Awaited<ReturnType<typeof loadBackendConfig>>
-): Promise<{ lyrics: string; fit: LyricFit; tightened: boolean }> {
-  if (before.fits) return { lyrics, fit: before, tightened: false };
-  try {
-    const edited = await chat(
-      systemPrompt,
-      buildTightenPrompt({
-        lyrics,
-        durationKey,
-        durationLabel,
-        words: before.words,
-        targetWords: before.targetWords,
-        maxWords: before.maxWords,
-        missingSections: before.missingSections,
-        hasOutro: before.hasOutro,
-        language,
-      }),
-      backendCfg
-    );
-    const candidate = cleanLyricsForSinging(cleanLyricReply(edited.content));
-    const after = candidate ? analyzeLyricFit(candidate, durationKey, durationLabel) : null;
-    // Keep the edit only when it is genuinely better on one axis and no
-    // worse on the other: never longer, never missing the close a song of
-    // this length needs, and never without a punchline at the end.
-    const needsOutro = (after?.seconds ?? before.seconds) > 20;
-    const improves =
-      !!after &&
-      (after.overBy < before.overBy ||
-        (needsOutro && !before.hasOutro && after.hasOutro));
-    if (
-      after &&
-      after.words > 20 &&
-      after.overBy <= before.overBy &&
-      (!needsOutro || after.hasOutro) &&
-      improves &&
-      hasPunchlineEnding(after)
-    ) {
-      console.log(
-        `Lyrics tightened for ${durationKey}: ${before.words} -> ${after.words} words (max ${after.maxWords})`
-      );
-      return { lyrics: candidate, fit: after, tightened: true };
-    }
-    console.warn(
-      `Lyric tightening rejected for ${durationKey}: draft ${before.words} words (fits=${before.fits}, outro=${before.hasOutro})` +
-        (after
-          ? `, edit ${after.words} words (fits=${after.fits}, outro=${after.hasOutro})`
-          : ", no usable edit")
-    );
-  } catch (e) {
-    // A failed edit must never cost the user their song.
-    console.error("Lyric tightening failed", e);
-  }
-  return { lyrics, fit: before, tightened: false };
-}
-
-/**
  * The LLM is sometimes chatty. Strip any markdown code fences and extract
  * just the JSON object.
  */
@@ -344,6 +296,12 @@ function sanitizeOutput(out: SongOutput): SongOutput {
 
   return {
     episodeTitle: out.episodeTitle || "Untitled Episode",
+    songPremise: typeof out.songPremise === "string" ? out.songPremise : "",
+    viralHook: typeof out.viralHook === "string" ? out.viralHook : "",
+    socialClip:
+      out.socialClip && typeof out.socialClip.lyrics === "string"
+        ? { section: String(out.socialClip.section ?? ""), lyrics: out.socialClip.lyrics }
+        : undefined,
     duration: out.duration || "",
     musicalDirection: out.musicalDirection || "",
     lyrics: out.lyrics || "",
@@ -371,6 +329,7 @@ function sanitizeOutput(out: SongOutput): SongOutput {
     },
     nextEpisodeTeaser: out.nextEpisodeTeaser || "",
     nextEpisodeTitle: out.nextEpisodeTitle || "The Next Chapter",
+    youtube: cleanYouTubeSeo(out.youtube),
     storyBibleUpdate: out.storyBibleUpdate ?? {
       currentSituation: "",
       learnedSkills: [],
@@ -392,10 +351,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
+  // The arc the series follows: one written with Ralph, else Season 1.
+  const { arc } = await loadArc();
   const validEpisode =
-    body.episodeKey === "custom" || EPISODES.some((e) => e.key === body.episodeKey);
+    body.episodeKey === "custom" ||
+    isEpisodeKey(body.episodeKey) ||
+    arc.episodes.some((e) => e.key === body.episodeKey);
   if (!validEpisode) {
     return NextResponse.json({ error: "Unknown episode theme." }, { status: 400 });
+  }
+  // "Continue the story" always means the season, even when the song on
+  // screen was a one-off custom topic: it plays the next season episode.
+  if (body.action === "continue" && body.episodeKey === "custom") {
+    body = {
+      ...body,
+      episodeKey: arc.episodes[0].key,
+      episodeLabel: arc.episodes[0].label,
+      customTopic: undefined,
+      customScript: undefined,
+    };
   }
   if (!INTENSITIES.some((i) => i.key === body.intensity)) {
     return NextResponse.json({ error: "Unknown intensity." }, { status: 400 });
@@ -429,7 +403,7 @@ export async function POST(req: NextRequest) {
 
   const storyBible = await loadStoryBible();
   const previousEpisode =
-    body.action === "generate" ? null : await loadLastEpisode();
+    body.action === "generate" ? null : await loadLastEpisode(body.episodeId);
 
   // Brand-new songs (generate / continue) get a comic angle; remixes rewrite
   // the latest song, so that one is left off the do-not-reuse list.
@@ -441,7 +415,7 @@ export async function POST(req: NextRequest) {
   );
 
   const systemPrompt = buildSystemPrompt(croonerStyleKey, language);
-  const promptArgs: GenerateRequest = {
+  const userPrompt = buildUserPrompt({
     episodeKey: body.episodeKey,
     episodeLabel: body.episodeLabel,
     customTopic: body.customTopic,
@@ -453,50 +427,35 @@ export async function POST(req: NextRequest) {
     language,
     action: body.action,
     storyBible,
+    arc,
     previousEpisode,
     freshness,
-  };
+  });
 
   // === Pick the AI backend (Z.ai default, or OpenAI-compatible for local /
   // ngrok-hosted models like Ace 1.5). ===
   const backendCfg = await loadBackendConfig();
-  const durationLabel = DURATIONS.find((d) => d.key === body.duration)?.label;
-
-  // === Pass 1: the lyrics alone (StudioStack's approach). ===
-  // The songwriter writes only the song, as plain text, so its whole reply is
-  // the words; it is then fitted to the running time before anything else is
-  // written about it. Alt hooks keep the one-shot: they're about the package,
-  // not a new song. If this pass fails, the one-shot writes the lyrics itself.
-  let locked: { lyrics: string; fit: LyricFit; tightened: boolean } | null = null;
-  if (body.action !== "alt-hooks") {
-    try {
-      const draft = await chat(
-        buildLyricsSystemPrompt(croonerStyleKey, language),
-        buildUserPrompt({ ...promptArgs, mode: "lyrics" }),
-        backendCfg
-      );
-      const lyrics = cleanLyricsForSinging(cleanLyricReply(draft.content));
-      const fit = analyzeLyricFit(lyrics, body.duration, durationLabel);
-      if (fit.words > 20 && !/^\s*[{[]\s*"/.test(lyrics) && hasPunchlineEnding(fit)) {
-        locked = await fitToDuration(lyrics, fit, body.duration, durationLabel, systemPrompt, language, backendCfg);
-      } else {
-        console.warn(`Lyrics pass unusable (${fit.words} words); falling back to the one-shot`);
-      }
-    } catch (e) {
-      console.warn("Lyrics pass failed; falling back to the one-shot", e);
-    }
-  }
-
-  // === Pass 2: the episode package (JSON), built around the locked lyrics. ===
-  const userPrompt = buildUserPrompt(
-    locked ? { ...promptArgs, lockedLyrics: locked.lyrics } : promptArgs
-  );
 
   let raw = "";
   let usedModel = "";
   let usedBackend = "zai";
+  // === Writers' room: plan the story before writing a new song. ===
+  // A short call decides what happens in each section and how it ends, so
+  // the songwriter writes one clear story instead of improvising it inside a
+  // twenty-field JSON. If planning fails, the song is written without one.
+  let plan: SongPlan | null = null;
+  if (isNewSong) {
+    try {
+      const planned = await chat(PLAN_SYSTEM, buildPlanPrompt(userPrompt), backendCfg);
+      plan = parseSongPlan(planned.content);
+      if (!plan) console.warn("Song plan unusable; writing without one:", planned.content.slice(0, 300));
+    } catch (e) {
+      console.error("Song planning failed; writing without a plan", e);
+    }
+  }
+
   try {
-    const result = await chat(systemPrompt, userPrompt, backendCfg);
+    const result = await chat(systemPrompt, withPlan(userPrompt, plan), backendCfg);
     raw = result.content;
     usedModel = result.model;
     usedBackend = result.backend;
@@ -534,31 +493,105 @@ export async function POST(req: NextRequest) {
   }
 
   let cleaned = sanitizeOutput(parsed);
-  let lyricFit: LyricFit;
-  let tightened: boolean;
-  if (locked) {
-    // The lyrics were settled in pass 1: never take the package's copy of them
-    // (a model "fixing" them here would undo the fit).
-    cleaned = {
-      ...cleaned,
-      lyrics: locked.lyrics,
-      closingLine: lastSungLine(locked.lyrics) || cleaned.closingLine,
-    };
-    ({ fit: lyricFit, tightened } = locked);
-  } else {
-    // One-shot: a sign-off written inside the lyrics field would be sung as the ending.
-    const lyrics = trimLyricSignoff(cleaned.lyrics);
-    const fitted = await fitToDuration(
-      lyrics,
-      analyzeLyricFit(lyrics, body.duration, durationLabel),
-      body.duration,
-      durationLabel,
-      systemPrompt,
-      language,
+  // A sign-off written inside the lyrics field would be sung as the ending.
+  cleaned = { ...cleaned, lyrics: trimLyricSignoff(cleaned.lyrics) };
+
+  // === Script editor: fix lines that don't make sense. ===
+  // Reads the song against its plan and rewrites only broken lines. Kept
+  // only when it changed something, didn't grow the song and still ends on
+  // a real punchline.
+  const durationLabelForEdit = DURATIONS.find((d) => d.key === body.duration)?.label;
+  try {
+    const before = analyzeLyricFit(cleaned.lyrics, body.duration, durationLabelForEdit);
+    const edited = await chat(
+      SENSE_EDIT_SYSTEM,
+      buildSenseEditPrompt({ lyrics: cleaned.lyrics, plan, premise: cleaned.songPremise, language }),
       backendCfg
     );
-    cleaned = { ...cleaned, lyrics: fitted.lyrics };
-    ({ fit: lyricFit, tightened } = fitted);
+    const { lyrics: candidate, changed } = applyLineFixes(cleaned.lyrics, parseLineFixes(edited.content));
+    const after = changed ? analyzeLyricFit(candidate, body.duration, durationLabelForEdit) : null;
+    // Line-for-line fixes can't restructure the song; just make sure it
+    // didn't grow past its running time or lose its ending.
+    const sameShape =
+      !!after &&
+      (after.overBy <= before.overBy || after.fits) &&
+      (!before.hasOutro || after.hasOutro) &&
+      hasPunchlineEnding(after);
+    if (changed && sameShape) {
+      cleaned = syncQuotes({ ...cleaned, lyrics: candidate });
+      console.log(`Lyrics sense-edited: ${changed} line(s) fixed`);
+    } else if (changed) {
+      console.warn("Sense edit rejected (song ran long or lost its ending)");
+    }
+  } catch (e) {
+    // A failed edit must never cost the user their song.
+    console.error("Sense edit failed", e);
+  }
+
+  // === Make the song fit its own running time before anything is stored. ===
+  // The audio engines get an exact number of seconds; a lyric that runs long
+  // has its ending clipped mid-line. So measure against the budget for the
+  // requested duration and, when the song overshoots or never closes, ask the
+  // editor pass for the same song tightened to fit.
+  const durationLabel = DURATIONS.find((d) => d.key === body.duration)?.label;
+  let lyricFit = analyzeLyricFit(cleaned.lyrics, body.duration, durationLabel);
+  let tightened = false;
+  if (!lyricFit.fits) {
+    const before = lyricFit;
+    try {
+      const edited = await chat(
+        systemPrompt,
+        buildTightenPrompt({
+          lyrics: cleaned.lyrics,
+          durationKey: body.duration,
+          durationLabel,
+          words: before.words,
+          targetWords: before.targetWords,
+          maxWords: before.maxWords,
+          missingSections: before.missingSections,
+          hasOutro: before.hasOutro,
+          language,
+        }),
+        backendCfg
+      );
+      const candidate = cleanLyricReply(edited.content);
+      const after = candidate
+        ? analyzeLyricFit(candidate, body.duration, durationLabel)
+        : null;
+      // Keep the edit only when it is genuinely better on one axis and no
+      // worse on the other: never longer, never missing the close a song of
+      // this length needs, and never without a punchline at the end.
+      const needsOutro = (after?.seconds ?? before.seconds) > 20;
+      const improves =
+        !!after &&
+        (after.overBy < before.overBy ||
+          (needsOutro && !before.hasOutro && after.hasOutro));
+      if (
+        after &&
+        after.words > 20 &&
+        after.overBy <= before.overBy &&
+        (!needsOutro || after.hasOutro) &&
+        improves &&
+        hasPunchlineEnding(after)
+      ) {
+        cleaned = { ...cleaned, lyrics: candidate };
+        lyricFit = after;
+        tightened = true;
+        console.log(
+          `Lyrics tightened for ${body.duration}: ${before.words} -> ${after.words} words (max ${after.maxWords})`
+        );
+      } else {
+        console.warn(
+          `Lyric tightening rejected for ${body.duration}: draft ${before.words} words (fits=${before.fits}, outro=${before.hasOutro})` +
+            (after
+              ? `, edit ${after.words} words (fits=${after.fits}, outro=${after.hasOutro})`
+              : ", no usable edit")
+        );
+      }
+    } catch (e) {
+      // A failed edit must never cost the user their song.
+      console.error("Lyric tightening failed", e);
+    }
   }
 
   const newEpisodeCount =
@@ -566,10 +599,14 @@ export async function POST(req: NextRequest) {
       ? storyBible.episodeCount + 1
       : storyBible.episodeCount;
 
+  // "Continue" plays the next season episode; file the song under that one so
+  // remixes and the next "continue" know where the story is.
+  const played = seasonEpisodeFor(body.episodeKey, body.action, storyBible.episodeCount, arc);
+
   const createdEpisode = await db.episode.create({
     data: {
-      episodeTheme: body.episodeKey,
-      episodeLabel: body.episodeLabel,
+      episodeTheme: played?.key ?? body.episodeKey,
+      episodeLabel: played?.label ?? body.episodeLabel,
       customTopic: body.customTopic ?? null,
       customScript: script ?? null,
       duration: body.duration,
@@ -587,7 +624,13 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  await saveStoryBible(cleaned.storyBibleUpdate, newEpisodeCount);
+  // Only the series moves the story on. A one-off custom topic or pasted
+  // script (anything a Telegram user types) would otherwise rewrite the shared
+  // Story Bible, and every later song would carry its side plot forward.
+  const updatesSeries = body.episodeKey !== "custom";
+  if (updatesSeries) {
+    await saveStoryBible(cleaned.storyBibleUpdate, newEpisodeCount);
+  }
 
   // === Fire TTS audio generation in the background. ===
   // We don't await this — generation can take 5-30s for a long song, and the
@@ -603,10 +646,9 @@ export async function POST(req: NextRequest) {
     output: cleaned,
     episodeId: createdEpisode.id,
     lyricFit: { ...lyricFit, tightened },
-    storyBible: {
-      ...cleaned.storyBibleUpdate,
-      episodeCount: newEpisodeCount,
-    },
+    storyBible: updatesSeries
+      ? { ...cleaned.storyBibleUpdate, episodeCount: newEpisodeCount }
+      : storyBible,
     backend: usedBackend,
     model: usedModel,
     croonerStyle: croonerStyleKey,
