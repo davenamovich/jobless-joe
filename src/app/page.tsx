@@ -21,6 +21,7 @@ import { OutputDisplay } from "@/components/joe/OutputDisplay";
 import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
 import { TrendingIdeas } from "@/components/joe/TrendingIdeas";
 import { SongIdeas } from "@/components/joe/SongIdeas";
+import { SitdownWithJoe } from "@/components/joe/SitdownWithJoe";
 import { SettingsDialog } from "@/components/joe/SettingsDialog";
 import { SongPanel } from "@/components/joe/SongPanel";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
@@ -535,6 +536,7 @@ export default function Home() {
                 handleAction("generate", idea.topic);
               }}
             />
+            <SitdownWithJoe className="mt-4" />
           </aside>
 
           {/* Middle column: Output + Story Bible + Episode Archive */}
