@@ -79,7 +79,7 @@ export function parseRedditTop(
     }));
 }
 
-async function fetchRedditTop(sub: string): Promise<MorningPost[]> {
+export async function fetchRedditTop(sub: string): Promise<MorningPost[]> {
   const res = await fetch(
     `https://www.reddit.com/r/${sub}/top.json?t=day&limit=10`,
     {
