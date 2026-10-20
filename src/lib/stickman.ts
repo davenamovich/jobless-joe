@@ -20,6 +20,9 @@ export const STICKMAN_POSES = [
   "think",
   "carry",
   "type",
+  "throw",
+  "wave",
+  "present",
 ] as const;
 export type StickmanPose = (typeof STICKMAN_POSES)[number];
 
@@ -162,6 +165,9 @@ export const POSES: Record<StickmanPose, PoseDef> = {
   think: { le: [-20, 222], lh: [14, 232], re: [36, 206], rh: [10, 150], ...LEGS },
   carry: { le: [-30, 210], lh: [-40, 240], re: [30, 210], rh: [40, 240], ...LEGS },
   type: { le: [14, 214], lh: [56, 236], re: [34, 206], rh: [74, 232], ...LEGS },
+  throw: { le: [-30, 200], lh: [-58, 228], re: [42, 150], rh: [82, 108], lk: [-18, 330], lf: [-38, 390], rk: [20, 326], rf: [34, GROUND], head: [4, -2] },
+  wave: { ...L_DOWN, re: [40, 146], rh: [56, 100], ...LEGS, head: [2, 0] },
+  present: { le: [-36, 196], lh: [-62, 182], re: [46, 178], rh: [94, 168], ...LEGS, head: [3, 0] },
 };
 
 const SIDE_PROPS: ReadonlySet<StickmanProp> = new Set(["laptop", "dog", "mic"]);
