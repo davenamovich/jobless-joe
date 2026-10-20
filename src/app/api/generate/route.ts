@@ -35,6 +35,8 @@ import {
   SENSE_EDIT_SYSTEM,
   buildPlanPrompt,
   buildSenseEditPrompt,
+  applyLineFixes,
+  parseLineFixes,
   parseSongPlan,
   syncQuotes,
   withPlan,
@@ -506,20 +508,20 @@ export async function POST(req: NextRequest) {
       buildSenseEditPrompt({ lyrics: cleaned.lyrics, plan, premise: cleaned.songPremise, language }),
       backendCfg
     );
-    const candidate = cleanLyricReply(edited.content);
-    const after = candidate ? analyzeLyricFit(candidate, body.duration, durationLabelForEdit) : null;
+    const { lyrics: candidate, changed } = applyLineFixes(cleaned.lyrics, parseLineFixes(edited.content));
+    const after = changed ? analyzeLyricFit(candidate, body.duration, durationLabelForEdit) : null;
+    // Line-for-line fixes can't restructure the song; just make sure it
+    // didn't grow past its running time or lose its ending.
     const sameShape =
       !!after &&
-      after.words <= before.words + 4 &&
-      after.words >= before.words * 0.8 &&
-      after.overBy <= before.overBy &&
+      (after.overBy <= before.overBy || after.fits) &&
       (!before.hasOutro || after.hasOutro) &&
       hasPunchlineEnding(after);
-    if (candidate && sameShape && candidate.trim() !== cleaned.lyrics.trim()) {
+    if (changed && sameShape) {
       cleaned = syncQuotes({ ...cleaned, lyrics: candidate });
-      console.log(`Lyrics sense-edited: ${before.words} -> ${after!.words} words`);
-    } else if (candidate && !sameShape) {
-      console.warn("Sense edit rejected (changed the song's shape)");
+      console.log(`Lyrics sense-edited: ${changed} line(s) fixed`);
+    } else if (changed) {
+      console.warn("Sense edit rejected (song ran long or lost its ending)");
     }
   } catch (e) {
     // A failed edit must never cost the user their song.

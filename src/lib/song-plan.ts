@@ -42,7 +42,8 @@ You do NOT write lyrics. You plan ONE song so that a listener hearing it once un
 A good plan:
 - Is ONE situation with ONE premise, told in order. Cause, then effect. No dream logic, no random images.
 - Uses specific, real details people recognise (a job ad, a rejection email, a recruiter's message, a rent notice), not vague feelings.
-- Escalates: each section makes the same situation more absurd. It never jumps to an unrelated scene.
+- Escalates: what actually HAPPENS gets more absurd in each section (real events getting worse), never the imagery. It never jumps to an unrelated scene.
+- Is literal: real places, real people, real events. Nothing "is now" something else, no extended metaphors, no role-play (no "the dinner table is a courtroom").
 - Has a twist Joe earns: he uses AI in a concrete, believable way (writes, builds, automates something specific), or the situation flips on the people who doubted him.
 - Ends on a punchline that pays off the setup. The punchline must make sense to someone who only heard this song.
 
@@ -130,11 +131,30 @@ export function withPlan(userPrompt: string, plan: SongPlan | null): string {
   return at === -1 ? `${userPrompt}\n\n${block}` : `${userPrompt.slice(0, at)}\n${block}\n${userPrompt.slice(at)}`;
 }
 
-export const SENSE_EDIT_SYSTEM = `You are the script editor for Jobless Joe's comedy songs. You fix lyrics that don't make sense. You are strict about meaning and gentle about style.`;
+export const SENSE_EDIT_SYSTEM = `You are the script editor for Jobless Joe's comedy songs. You find lines that don't make sense and fix them. You are strict about meaning and gentle about style. You reply with JSON only.`;
+
+/**
+ * Lines that are usually nonsense in practice: two ideas glued with a dash or
+ * semicolon, or a scene declared to "be" something else ("the potluck is now
+ * court"). The editor must fix or justify every one of these.
+ */
+export function flagSuspectLines(lyrics: string): string[] {
+  return lyrics
+    .split("\n")
+    .map((l) => l.trim())
+    .filter((l) => l && !/^\[[^\]]+\]$/.test(l))
+    .filter(
+      (l) =>
+        /\s[—–]\s?|[^\s]—[^\s]|;/.test(l) ||
+        /\b(is|are|'s|'re)\s+now\s+(a|an|the|my|our)?\s*\w+/i.test(l) ||
+        /\b(turned|turns)\s+into\s+(a|an|the)\b/i.test(l),
+    );
+}
 
 export function buildSenseEditPrompt(args: { lyrics: string; plan: SongPlan | null; premise?: string; language?: string }): string {
   const lang = getLanguage(args.language);
   const story = args.plan ? planBlock(args.plan) : `THE SONG'S STORY: ${args.premise || "(read it from the lyrics)"}`;
+  const suspects = flagSuspectLines(args.lyrics);
   return `${story}
 
 LYRICS TO CHECK
@@ -143,21 +163,61 @@ ${args.lyrics}
 
 YOUR JOB
 ========
-Read the lyrics line by line, as a listener hearing them once. Rewrite ONLY the lines that:
-- don't make literal sense said out loud, or are ungrammatical;
-- don't follow from the line before (a jump to a new scene, a new character from nowhere, a pronoun with no clear owner);
-- contradict the story or another line;
-- are there only because they rhyme, or are a random image or mixed metaphor;
-- leave the listener unsure what happened.
+Read the lyrics line by line, as a listener hearing them once. A line is BROKEN when it:
+- doesn't make literal sense said out loud, or is ungrammatical;
+- is a metaphor or role-play instead of what actually happens ("the potluck is now court", "I'm lawyer and defendant", "order in the casserole");
+- glues two unrelated ideas together with a dash or semicolon;
+- doesn't follow from the line before (a jump to a new scene, a character from nowhere, a pronoun with no clear owner);
+- contradicts the story or another line;
+- is there only because it rhymes.
+${suspects.length ? `\nThese lines look suspicious. Fix each one unless it is genuinely clear and literal:\n${suspects.map((l) => `- ${l}`).join("\n")}\n` : ""}
+For each broken line, write a replacement that says plainly what happens in this song's story, about the same length, keeping Joe's voice, the rhyme feel where you can, and ${lang.label}. One idea per line. Never touch section tags. Keep the last line sung as the punchline (fix it only if it makes no sense).
 
-Rules:
-- Keep everything that already works, word for word. If every line makes sense, return the lyrics unchanged.
-- Keep the same bracketed section tags, in the same order, each on its own line.
-- Never make the song longer. Replace a broken line with one line of about the same length.
-- Keep Joe's voice, the rhyme feel and ${lang.label}.
-- The last line sung stays the punchline and stays last.
+Reply with ONLY this JSON (an empty list if every line is fine):
+{"fixes": [{"line": "the original line, copied exactly", "fix": "the replacement line"}]}`;
+}
 
-REPLY WITH THE FULL LYRICS AND NOTHING ELSE: no notes, no list of changes, no JSON, no markdown fences.`;
+export interface LineFix {
+  line: string;
+  fix: string;
+}
+
+export function parseLineFixes(raw: string): LineFix[] {
+  const m = /\{[\s\S]*\}/.exec(raw);
+  if (!m) return [];
+  try {
+    const j = JSON.parse(m[0]) as { fixes?: { line?: unknown; fix?: unknown }[] };
+    return (Array.isArray(j.fixes) ? j.fixes : [])
+      .map((f) => ({ line: str(f?.line), fix: str(f?.fix) }))
+      .filter((f) => f.line && f.fix && f.line !== f.fix);
+  } catch {
+    return [];
+  }
+}
+
+function norm(s: string): string {
+  return s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+}
+
+/**
+ * Apply line fixes by matching each original line (ignoring case and
+ * punctuation). Section tags are never touched, and a replacement can't be
+ * much longer than the line it replaces. Returns the new lyrics and how many
+ * lines changed.
+ */
+export function applyLineFixes(lyrics: string, fixes: LineFix[]): { lyrics: string; changed: number } {
+  const lines = lyrics.split("\n");
+  let changed = 0;
+  for (const f of fixes) {
+    if (/^\[[^\]]+\]$/.test(f.fix) || f.fix.includes("\n")) continue;
+    const target = norm(f.line);
+    const i = lines.findIndex((l) => !/^\s*\[[^\]]+\]\s*$/.test(l) && norm(l) === target);
+    if (i === -1) continue;
+    if (f.fix.length > lines[i].trim().length * 1.5 + 12) continue;
+    lines[i] = lines[i].replace(lines[i].trim(), f.fix);
+    changed++;
+  }
+  return { lyrics: lines.join("\n"), changed };
 }
 
 /**

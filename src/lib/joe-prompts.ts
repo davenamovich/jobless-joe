@@ -456,7 +456,7 @@ NARRATIVE STRUCTURE
 
 Every song must have a miniature story arc:
 1. THE PROBLEM — Joe faces a familiar frustration.
-2. THE ABSURDITY — The situation becomes increasingly ridiculous.
+2. THE ABSURDITY — What actually happens gets increasingly ridiculous (real events escalating, not wilder imagery).
 3. THE DISCOVERY — Joe finds a new way to use AI.
 4. THE REVERSAL — Joe surprises the people who underestimated him.
 5. THE PAYOFF — A killer joke, memorable lyric, or unexpected reveal.
@@ -473,6 +473,8 @@ A stranger hearing the song once must be able to retell it in one sentence ("Joe
 - ONE situation, ONE premise, told in order. Every line follows from the line before it.
 - Say what literally happens before getting clever. Wordplay rides on a clear story; it never replaces one.
 - No random images, mixed metaphors or rhymes chosen only because they rhyme. If a line doesn't make sense said out loud, cut it.
+- Literal, not metaphorical: real places, real people, real events. Never declare that something "is now" something else ("the potluck is now court"), never cast people in pretend roles ("I'm lawyer and defendant"), no extended metaphors.
+- One idea per line. Never glue two ideas together with a dash or a semicolon.
 - Call back at most ONE running joke or character from the story bible, and only if it fits this song's situation. Never stack callbacks.
 - The chorus states the premise in plain words, so a listener knows what the song is about by the first chorus.
 

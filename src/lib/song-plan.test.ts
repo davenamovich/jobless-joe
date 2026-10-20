@@ -1,7 +1,7 @@
 // Run: npx tsx --test src/lib/song-plan.test.ts
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildPlanPrompt, buildSenseEditPrompt, parseSongPlan, planBlock, syncQuotes, withPlan } from "./song-plan";
+import { applyLineFixes, buildPlanPrompt, buildSenseEditPrompt, flagSuspectLines, parseLineFixes, parseSongPlan, planBlock, syncQuotes, withPlan } from "./song-plan";
 import type { SongOutput } from "./joe-prompts";
 
 const PLAN_JSON = {
@@ -43,7 +43,7 @@ describe("song plan", () => {
   it("asks the editor to fix only broken lines against the plan", () => {
     const plan = parseSongPlan(JSON.stringify(PLAN_JSON))!;
     const p = buildSenseEditPrompt({ lyrics: "[VERSE 1]\nA line", plan });
-    assert.match(p, /Rewrite ONLY the lines/);
+    assert.match(p, /A line is BROKEN when/);
     assert.match(p, /\[VERSE 1\]\nA line/);
     assert.match(p, /The whole song in one sentence/);
     assert.match(buildSenseEditPrompt({ lyrics: "x", plan: null, premise: "Joe vs a bot" }), /Joe vs a bot/);
@@ -60,5 +60,36 @@ describe("song plan", () => {
     assert.equal(synced.socialClip?.lyrics, "Rejected by a robot\nFour seconds flat");
     const untouched = syncQuotes({ ...out, viralHook: "Four seconds flat" });
     assert.equal(untouched.viralHook, "Four seconds flat");
+  });
+});
+
+describe("literal-sense editor", () => {
+  const nonsense = `[VERSE 1]
+The potluck is now court—my aunt bangs a spoon like a gavel.
+I'm lawyer and defendant; The Team laid me off by email.
+Order in the casserole—my paycheck has vanished.
+[CHORUS]
+Laid off by email, so I asked AI to write back.`;
+
+  it("flags dash-glued, semicolon and 'is now' lines, not plain ones", () => {
+    const flagged = flagSuspectLines(nonsense);
+    assert.equal(flagged.length, 3);
+    assert.ok(!flagged.some((l) => l.startsWith("Laid off by email")));
+    assert.match(buildSenseEditPrompt({ lyrics: nonsense, plan: null }), /look suspicious[\s\S]*The potluck is now court/);
+  });
+
+  it("applies fixes line by line, ignoring case and punctuation", () => {
+    const fixes = parseLineFixes(
+      '```json\n{"fixes":[{"line":"the potluck is now court — my aunt bangs a spoon like a gavel","fix":"At the family potluck my aunt asks how the job is going."},{"line":"[CHORUS]","fix":"x"},{"line":"not in the song","fix":"y"}]}\n```',
+    );
+    const { lyrics, changed } = applyLineFixes(nonsense, fixes);
+    assert.equal(changed, 1);
+    assert.match(lyrics, /^\[VERSE 1\]\nAt the family potluck my aunt asks how the job is going\.\n/);
+    assert.match(lyrics, /\[CHORUS\]/);
+  });
+
+  it("rejects a replacement far longer than the line", () => {
+    const { changed } = applyLineFixes("[VERSE 1]\nShort line.", [{ line: "Short line.", fix: "x".repeat(80) }]);
+    assert.equal(changed, 0);
   });
 });
