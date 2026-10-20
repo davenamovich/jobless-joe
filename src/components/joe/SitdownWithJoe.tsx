@@ -17,6 +17,7 @@ import {
   ExternalLink,
   Film,
   Loader2,
+  Sparkles,
   Upload,
   X,
 } from "lucide-react";
@@ -28,13 +29,16 @@ const PLACEHOLDER = `Plain lines are Joe's monologue.
 
 For an interview, label the lines:
 JOE: So you applied to 400 jobs?
-SARAH: 401. One was a typo.`;
+SARAH: 401. One was a typo.
+
+Fish Audio acts out tags like [excited], [laugh], [pause] or <whisper>…</whisper>.`;
 
 export function SitdownWithJoe({ className }: { className?: string }) {
   const [title, setTitle] = useState("");
   const [script, setScript] = useState("");
   const [audio, setAudio] = useState<File | null>(null);
   const [making, setMaking] = useState(false);
+  const [tagging, setTagging] = useState(false);
   const [pageUrl, setPageUrl] = useState("");
   const [mp4Url, setMp4Url] = useState("");
   const [mp4State, setMp4State] = useState<"idle" | "rendering" | "failed">(
@@ -77,6 +81,26 @@ export function SitdownWithJoe({ className }: { className?: string }) {
       );
     } finally {
       setMaking(false);
+    }
+  };
+
+  // Fish Audio expression tags, added without changing a word.
+  const addExpression = async () => {
+    setTagging(true);
+    try {
+      const res = await fetch("/api/sitdown/expression", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ script }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Request failed (${res.status}).`);
+      setScript(json.script);
+      toast.success("Expression tags added. Fish Audio acts them out; captions hide them.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't add expression tags.");
+    } finally {
+      setTagging(false);
     }
   };
 
@@ -195,6 +219,23 @@ export function SitdownWithJoe({ className }: { className?: string }) {
             className="min-h-[120px] text-sm"
             maxLength={20_000}
           />
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-xs"
+              onClick={addExpression}
+              disabled={!script.trim() || tagging || making}
+            >
+              {tagging ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {tagging ? "Directing Joe…" : "Add expression tags"}
+            </Button>
+            <span className="text-[0.7rem] text-muted-foreground">For Fish Audio voicing</span>
+          </div>
           <input
             ref={fileRef}
             type="file"

@@ -11,8 +11,9 @@
  *   - the page's own <audio> is mixed in by the recorder.
  *
  * Script format: plain lines are Joe's. "GUEST NAME: line" puts a guest on
- * the couch; "JOE:" (or "HOST:") switches back to Joe. (Stage directions)
- * and [notes] are skipped.
+ * the couch; "JOE:" (or "HOST:") switches back to Joe. Expression tags for
+ * Fish Audio ([excited], [laugh], <whisper>…</whisper>; a (stage direction)
+ * counts as one) are voiced but never shown in the captions.
  */
 
 export type SitdownGesture = "rest" | "talk" | "cards" | "point" | "shrug" | "listen";
@@ -22,6 +23,8 @@ export interface SitdownLine {
   /** Display name for the caption. */
   name: string;
   text: string;
+  /** The line as voiced: `text` plus its expression tags. */
+  spoken: string;
   gesture: SitdownGesture;
 }
 
@@ -57,7 +60,7 @@ function titleCase(s: string): string {
 
 /** Split a long paragraph into caption-sized pieces on sentence breaks. */
 function captionChunks(text: string): string[] {
-  const sentences = text.match(/[^.!?…]+[.!?…]+["')\]]*|[^.!?…]+$/g) ?? [text];
+  const sentences = text.match(/[^.!?…]+[.!?…]+(?:["')\]]|<\/[a-z]+>)*|[^.!?…]+$/gi) ?? [text];
   const out: string[] = [];
   let cur = "";
   for (const raw of sentences) {
@@ -80,15 +83,29 @@ function gestureFor(text: string, i: number): SitdownGesture {
   return (["talk", "cards", "talk", "rest"] as const)[i % 4];
 }
 
+const SCOPED_TAG = /<\/?[a-z][\w -]{0,30}>/gi;
+
+/** A line without its expression tags: what the captions show. */
+export function stripExpressionTags(s: string): string {
+  return s
+    .replace(/\([^)]*\)|\[[^\]]*\]/g, " ")
+    .replace(SCOPED_TAG, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 export function parseSitdownScript(script: string): SitdownScript {
   const lines: SitdownLine[] = [];
   let guest: string | null = null;
   let speaker: "joe" | "guest" = "joe";
   let joeCount = 0;
   for (const rawLine of script.replace(/\r/g, "").split("\n")) {
-    let text = rawLine.replace(/\([^)]*\)|\[[^\]]*\]/g, " ").replace(/\s+/g, " ").trim();
-    if (!text) continue;
-    const label = /^([A-Za-z][\w .'-]{0,24}?)\s*:\s*(.*)$/.exec(text);
+    // (laughs) is a direction too: voice it as a Fish tag.
+    let text = rawLine.replace(/\(([^)]*)\)/g, " [$1] ").replace(/\s+/g, " ").trim();
+    if (!stripExpressionTags(text)) continue;
+    // "[excited] SARAH: …" — leading tags may come before the speaker label.
+    const lead = /^((?:\[[^\]]*\]\s*)*)([\s\S]*)$/.exec(text)!;
+    const label = /^([A-Za-z][\w .'-]{0,24}?)\s*:\s*(.*)$/.exec(lead[2]);
     if (label) {
       const name = label[1].trim();
       if (JOE_LABEL.test(name)) speaker = "joe";
@@ -96,14 +113,16 @@ export function parseSitdownScript(script: string): SitdownScript {
         speaker = "guest";
         guest = guest ?? titleCase(name);
       }
-      text = label[2].trim();
-      if (!text) continue;
+      text = `${lead[1]}${label[2]}`.trim();
+      if (!stripExpressionTags(text)) continue;
     }
-    for (const chunk of captionChunks(text)) {
+    for (const spoken of captionChunks(text)) {
+      const chunk = stripExpressionTags(spoken);
+      if (!chunk) continue;
       if (speaker === "joe") {
-        lines.push({ speaker, name: "Joe", text: chunk, gesture: gestureFor(chunk, joeCount++) });
+        lines.push({ speaker, name: "Joe", text: chunk, spoken, gesture: gestureFor(chunk, joeCount++) });
       } else {
-        lines.push({ speaker, name: guest ?? "Guest", text: chunk, gesture: "listen" });
+        lines.push({ speaker, name: guest ?? "Guest", text: chunk, spoken, gesture: "listen" });
       }
     }
   }
