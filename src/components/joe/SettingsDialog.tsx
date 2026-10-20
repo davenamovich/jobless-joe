@@ -53,6 +53,7 @@ interface BackendConfigResponse {
   ytConnected: boolean;
   upUser: string;
   upPlatforms: string;
+  upFacebookPageId?: string;
   hasUpKey: boolean;
   upKeyMasked: string;
   hasFishKey: boolean;
@@ -138,6 +139,9 @@ export function SettingsDialog({ onConfigChanged }: Props) {
   const [upKey, setUpKey] = useState("");
   const [upUser, setUpUser] = useState("");
   const [upPlatforms, setUpPlatforms] = useState<string[]>([]);
+  const [upFbPage, setUpFbPage] = useState("");
+  const [fbPages, setFbPages] = useState<{ id: string; name: string }[]>([]);
+  const [fbLoading, setFbLoading] = useState(false);
   const [hasExistingUpKey, setHasExistingUpKey] = useState(false);
   const [upKeyMasked, setUpKeyMasked] = useState("");
 
@@ -197,6 +201,7 @@ export function SettingsDialog({ onConfigChanged }: Props) {
         setYtClientSecret("");
         setUpUser(cfg.upUser ?? "");
         setUpPlatforms((cfg.upPlatforms ?? "").split(",").filter(Boolean));
+        setUpFbPage(cfg.upFacebookPageId ?? "");
         setHasExistingUpKey(cfg.hasUpKey);
         setUpKeyMasked(cfg.upKeyMasked ?? "");
         setUpKey("");
@@ -212,6 +217,24 @@ export function SettingsDialog({ onConfigChanged }: Props) {
       .catch(() => toast.error("Couldn't load backend config."))
       .finally(() => setLoading(false));
   }, [open]);
+
+  // The Facebook Pages on the saved Upload-Post profile, to pick one.
+  const findFacebookPages = async () => {
+    setFbLoading(true);
+    try {
+      const res = await fetch("/api/upload-post/facebook-pages");
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || `Request failed (${res.status}).`);
+      const pages = (json.pages ?? []) as { id: string; name: string }[];
+      setFbPages(pages);
+      if (!pages.length) toast.error("No Facebook Pages on this Upload-Post profile. Connect one at upload-post.com.");
+      else if (!upFbPage) setUpFbPage(pages[0].id);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Couldn't load your Facebook Pages.");
+    } finally {
+      setFbLoading(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -241,6 +264,7 @@ export function SettingsDialog({ onConfigChanged }: Props) {
           upApiKey: upKey,
           upUser,
           upPlatforms: upPlatforms.join(","),
+          upFacebookPageId: upFbPage,
           fishApiKey: fishKey,
           fishJoeVoiceId: fishJoeVoice,
           fishGuestVoiceId: fishGuestVoice,
@@ -970,9 +994,47 @@ export function SettingsDialog({ onConfigChanged }: Props) {
                     ))}
                   </div>
                   <p className="text-[0.7rem] text-muted-foreground">
-                    Platforms not connected on the profile are skipped, not failed.
+                    Only ticked platforms get posts. Platforms not connected on the profile are skipped, not failed.
                   </p>
                 </div>
+                {upPlatforms.includes("facebook") && (
+                  <div className="space-y-1.5">
+                    <Label htmlFor="up-fb-page" className="text-xs">
+                      Facebook Page
+                    </Label>
+                    <div className="flex gap-2">
+                      {fbPages.length > 0 ? (
+                        <select
+                          id="up-fb-page"
+                          value={upFbPage}
+                          onChange={(e) => setUpFbPage(e.target.value)}
+                          className="h-9 flex-1 rounded-md border border-input bg-card px-2 text-xs"
+                        >
+                          {fbPages.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name || p.id}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <Input
+                          id="up-fb-page"
+                          value={upFbPage}
+                          onChange={(e) => setUpFbPage(e.target.value)}
+                          placeholder="Page ID (blank = pick automatically)"
+                          className="bg-card font-mono text-xs flex-1"
+                        />
+                      )}
+                      <Button type="button" size="sm" variant="outline" onClick={findFacebookPages} disabled={fbLoading}>
+                        {fbLoading ? "Loading…" : "Find my Pages"}
+                      </Button>
+                    </div>
+                    <p className="text-[0.7rem] text-muted-foreground">
+                      Facebook needs to know which Page to post to when you manage more than one. Save your key and
+                      profile first, then find your Pages.
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
