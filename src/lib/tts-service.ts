@@ -33,6 +33,7 @@ import {
 import { buildAceCaption, isDuetEpisode, markDuetLyrics } from "@/lib/crooner-styles";
 import { getLanguage } from "@/lib/languages";
 import { buildAceStepTaskPayload, renderAceStepTask } from "@/lib/ace-step-payload";
+import { singableLyrics } from "@/lib/sung-pronunciation";
 import type { SongOutput } from "@/lib/joe-prompts";
 
 const AUDIO_DIR = path.join(process.cwd(), "public", "audio");
@@ -338,7 +339,10 @@ async function generateAceStepAudio(
 ): Promise<{ buffer: Buffer; format: string; durationSec: number }> {
   const base = aceStepBase(cfg.aceStepBaseUrl);
   const model = cfg.aceStepModel?.trim() || ACE_STEP_DEFAULT_MODEL;
-  const written = output.lyrics?.trim() ?? "";
+  const vocalLanguage = getLanguage(language).ace;
+  // Sung copy only: digits, symbols, acronyms and loanwords spelled the way
+  // they should sound. The stored and displayed lyrics stay as written.
+  const written = singableLyrics(output.lyrics?.trim() ?? "", vocalLanguage);
   const lyrics = duet ? markDuetLyrics(written) : written;
   // Always the same Joe voice brief, with a short episode-specific clause
   // appended — see ACE_CROONER_STYLE_PROMPT. About one song in five is a duet.
@@ -348,7 +352,7 @@ async function generateAceStepAudio(
     caption,
     lyrics,
     durationSec: aceStepDurationSec(durationKey, output.duration),
-    vocalLanguage: getLanguage(language).ace,
+    vocalLanguage,
     model,
   });
 
