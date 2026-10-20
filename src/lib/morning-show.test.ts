@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   clampCount,
   monologuePrompt,
+  showLanguageNote,
   morningShowYouTube,
   parseMonologue,
   parseRedditTop,
@@ -117,4 +118,13 @@ test("parseMonologue reads questions and SEO; YouTube copy is search-led", () =>
   assert.match(yt.description, /^How to get past the ATS/);
   assert.match(yt.description, /• Will ai replace recruiters\?/);
   assert.match(yt.description, /#Shorts/);
+});
+
+test("show language: nothing for English, a full block otherwise", () => {
+  assert.equal(showLanguageNote(), "");
+  assert.equal(showLanguageNote("en"), "");
+  const es = showLanguageNote("es");
+  assert.match(es, /LANGUAGE: SPANISH/);
+  assert.match(es, /Latin American Spanish/);
+  assert.match(es, /JSON keys and the performance tags/);
 });

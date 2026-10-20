@@ -19,7 +19,13 @@ const SOURCES: { key: LetterSource; label: string }[] = [
   { key: "madeup", label: "Made up" },
 ];
 
-export function EveningShow({ onScript }: { onScript: (show: MorningShowResult) => void }) {
+export function EveningShow({
+  onScript,
+  language,
+}: {
+  onScript: (show: MorningShowResult) => void;
+  language: string;
+}) {
   const [count, setCount] = useState(4);
   const [source, setSource] = useState<LetterSource>("mix");
   const [letters, setLetters] = useState<ViewerLetter[]>([]);
@@ -30,7 +36,7 @@ export function EveningShow({ onScript }: { onScript: (show: MorningShowResult) 
   const pull = async () => {
     setPulling(true);
     try {
-      const res = await fetch(`/api/evening-show?count=${count}&source=${source}`);
+      const res = await fetch(`/api/evening-show?count=${count}&source=${source}&language=${encodeURIComponent(language)}`);
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Request failed (${res.status}).`);
       const list = (json.letters ?? []) as ViewerLetter[];
@@ -49,7 +55,7 @@ export function EveningShow({ onScript }: { onScript: (show: MorningShowResult) 
       const res = await fetch("/api/evening-show", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ letters: letters.filter((_, i) => kept.has(i)) }),
+        body: JSON.stringify({ letters: letters.filter((_, i) => kept.has(i)), language }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || `Request failed (${res.status}).`);
