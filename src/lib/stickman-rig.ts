@@ -14,7 +14,10 @@
  *      gesturing while he sings, a bounce on the beat.
  *   5. Stage: notes float off the mic when it's loud, confetti on
  *      celebrations, props drop/slide/pop in, the camera pushes in on sad
- *      lines, and (CSS) the spotlight sweeps.
+ *      lines, and (CSS) the spotlight sweeps between red curtains.
+ *   6. Showman: a hand mic whenever he sings empty-handed, his signature
+ *      wink now and then (and always on the last line), and a floor shadow
+ *      that squashes with every bounce.
  *
  * Server side builds the data (beats, poses, faces, prop markup) and the
  * skeleton SVG; JOE_RIG_JS is the browser engine that animates it.
@@ -204,13 +207,15 @@ export function rigSvg(tie: string): string {
   return `<svg class="sm-joe" viewBox="0 0 ${VIEW_W} ${VIEW_H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
 <g class="sm-cam">
 <path d="M18 ${GROUND} L${VIEW_W - 18} ${GROUND}" pathLength="1" fill="none" class="sm-ink sm-thin sm-ground" style="--d:0ms"/>
+<ellipse class="sm-shadow" cx="250" cy="${GROUND + 2}" rx="46" ry="7"/>
 <g class="sm-figwrap">
 <g class="sm-props"></g>
 ${el("sm-torso", 200)}
 <path class="sm-ink sm-thin sm-tie" pathLength="1" fill="${tie}" d="M-6 4 L6 4 L4 14 L9 54 L0 66 L-9 54 L-4 14 Z" style="--d:320ms"/>
 ${el("sm-armL", 380)}${el("sm-armR", 440)}${el("sm-legL", 520)}${el("sm-legR", 580)}
-<g class="sm-head"><circle r="32" pathLength="1" fill="#fff" class="sm-ink sm-paper" style="--d:0ms"/><g class="sm-eyes"></g><path class="sm-ink sm-thin sm-mouth" pathLength="1" fill="none" style="--d:700ms"/></g>
+<g class="sm-head"><circle r="32" pathLength="1" fill="#fff" class="sm-ink sm-paper" style="--d:0ms"/><g class="sm-eyes"></g><g class="sm-wink" display="none"><circle cx="-11" cy="-5" r="3.6" class="sm-dot"/><path d="M5 -4 Q11 -11 17 -4" pathLength="1" fill="none" class="sm-ink sm-thin"/><path d="M5 -15 L17 -18" pathLength="1" fill="none" class="sm-ink sm-thin"/></g><path class="sm-ink sm-thin sm-mouth" pathLength="1" fill="none" style="--d:700ms"/></g>
 <g class="sm-handprops"></g>
+<g class="sm-handmic" display="none">${ink("M2 2 L-9 -16", "sm-thin")}<circle cx="-13" cy="-23" r="8" pathLength="1" fill="#9ca3af" class="sm-ink sm-thin"/><path d="M-19 -24 L-7 -22 M-17 -29 L-9 -18" pathLength="1" fill="none" class="sm-ink sm-mesh"/></g>
 </g>
 <g class="sm-fx"></g>
 </g>
@@ -229,6 +234,8 @@ export const RIG_CSS = `
 .sm-paper{fill:var(--sm-paper)}
 .sm-dot{fill:var(--sm-ink)}
 .sm-mouth.open{fill:var(--sm-ink)}
+.sm-shadow{fill:#000;opacity:.3}
+.sm-mesh{stroke-width:1.5;opacity:.55}
 .sm-joe.drawing .sm-ink{stroke-dasharray:1;animation:sm-draw 480ms cubic-bezier(.3,.9,.4,1) var(--d,0ms) both}
 @keyframes sm-draw{from{stroke-dashoffset:1}to{stroke-dashoffset:0}}
 .sm-enter-pop{transform-box:fill-box;transform-origin:50% 100%;animation:sm-pop .45s cubic-bezier(.3,1.6,.5,1) both}
@@ -301,13 +308,14 @@ export const JOE_RIG_JS = String.raw`
     var arms = [q("sm-armL"), q("sm-armR")], legs = [q("sm-legL"), q("sm-legR")];
     var head = q("sm-head"), eyes = q("sm-eyes"), mouth = q("sm-mouth");
     var props = q("sm-props"), handProps = q("sm-handprops"), fx = q("sm-fx"), cam = q("sm-cam");
+    var shadow = q("sm-shadow"), handMic = q("sm-handmic"), wink = q("sm-wink");
     var beats = data.beats.length ? data.beats : [{ at: 0, pose: "sing", expr: "smug", text: "", sec: "", cx: 250, dance: false }];
     var music = null;
     analyse(audio, function (m) { music = m; });
 
     var cur = -1, shown = copyPose(data.poses.stand), from = shown, to = shown, tStart = 0, tDur = 450;
     var cxFrom = beats[0].cx, cxTo = cxFrom, cxStart = 0, zoom = 1, expr = "";
-    var nextBlink = 1800, blinkUntil = 0, lastNote = 0, lastMove = -1, parts = [];
+    var nextBlink = 1800, blinkUntil = 0, winkUntil = 0, lastNote = 0, lastMove = -1, parts = [];
     var t0 = performance.now();
 
     svg.classList.add("drawing");
@@ -380,6 +388,7 @@ export const JOE_RIG_JS = String.raw`
         setProp(b);
         if (b.cx !== cxTo) { cxFrom = cxTo; cxTo = b.cx; cxStart = now; }
         if (b.pose === "celebrate" && playing) for (var c = 0; c < 46; c++) spawn("confetti", b.cx, 120);
+        if (idx === beats.length - 1 && beats.length > 1 && playing) winkUntil = now + 1100; // the sign-off wink
         lastMove = -1;
       }
       // 3. Chorus dance: a new move every beat.
@@ -396,6 +405,9 @@ export const JOE_RIG_JS = String.raw`
       if (b.pose === "sing" && !b.dance) { p.lh[0] += Math.sin(t * 1.4) * 9; p.lh[1] += Math.cos(t * 1.1) * 8; }
       var bounce = playing ? -Math.pow(Math.sin(Math.PI * beatFrac), 2) * (b.dance ? 7 : 3) : Math.sin(t * 2) * 1.5;
       if (playing && !b.dance && b.pose !== "walk" && b.pose !== "celebrate") p.rf[1] -= Math.max(0, Math.sin(2 * Math.PI * beatFrac)) * 8;
+      // 6. The hand mic: whenever he sings with nothing else in hand, held up to his mouth.
+      var micInHand = singing && !b.prop;
+      if (micInHand && b.pose === "sing" && !b.dance) { p.re = [36, 200]; p.rh = [32, 160]; }
       var tilt = Math.sin(t * 0.9) * 3 + (b.dance ? Math.sin(Math.PI * beatPos) * 7 : 0);
 
       var cxT = clamp((now - cxStart) / 700, 0, 1), cx = cxFrom + (cxTo - cxFrom) * ease(cxT);
@@ -410,6 +422,12 @@ export const JOE_RIG_JS = String.raw`
       legs[1].setAttribute("d", "M" + P(HIP) + " L" + P(p.rk) + " L" + P(p.rf));
       head.setAttribute("transform", "translate(" + hx.toFixed(1) + " " + hy.toFixed(1) + ") rotate(" + tilt.toFixed(1) + ")");
 
+      shadow.setAttribute("cx", cx.toFixed(1));
+      shadow.setAttribute("rx", (46 * (1 + bounce / 30)).toFixed(1));
+      shadow.setAttribute("opacity", (0.3 * (1 + bounce / 20)).toFixed(2));
+      handMic.setAttribute("display", micInHand ? "inline" : "none");
+      if (micInHand) handMic.setAttribute("transform", "translate(" + P(p.rh) + ")");
+
       // Hand/head props follow their anchor.
       var hp = handProps.firstChild;
       if (hp) {
@@ -418,7 +436,15 @@ export const JOE_RIG_JS = String.raw`
       }
 
       // Blink every few seconds.
-      if (now > nextBlink + t0) { blinkUntil = now + 140; nextBlink = now - t0 + 2200 + Math.random() * 3000; }
+      // ...and on a good mood, sometimes it's the wink instead.
+      var canWink = b.expr === "happy" || b.expr === "smug" || b.expr === "neutral";
+      if (now > nextBlink + t0) {
+        if (canWink && playing && Math.random() < 0.3) winkUntil = now + 450; else blinkUntil = now + 140;
+        nextBlink = now - t0 + 2200 + Math.random() * 3000;
+      }
+      var winking = now < winkUntil && canWink;
+      eyes.setAttribute("display", winking ? "none" : "inline");
+      wink.setAttribute("display", winking ? "inline" : "none");
       eyes.setAttribute("transform", now < blinkUntil ? "translate(0 -5) scale(1 0.12) translate(0 5)" : "");
 
       // 2. Lip sync.
@@ -435,7 +461,8 @@ export const JOE_RIG_JS = String.raw`
       if (playing && lv > 0.6 && now - lastNote > 380 && singing) {
         lastNote = now;
         var mic = b.prop && b.prop.key.indexOf("mic") === 0;
-        spawn("note", cx + (mic ? 64 : hx + 18), mic ? 156 : hy + bounce);
+        if (micInHand) spawn("note", cx + p.rh[0] - 13, p.rh[1] - 30 + bounce);
+        else spawn("note", cx + (mic ? 64 : hx + 18), mic ? 156 : hy + bounce);
       }
       stepParticles(now, dt);
 
@@ -470,9 +497,14 @@ function inlineJson(v: unknown): string {
 export const STICKMAN_STAGE_CSS = `
 .sm-stage{margin:26px 0 0;border:1px solid var(--line,rgba(255,255,255,.14));border-radius:16px;
   background:linear-gradient(180deg,rgba(255,255,255,.03),rgba(0,0,0,.25))}
-.sm-joe{max-height:52vh}
-.sm-line{position:relative;margin:0;padding:6px 18px 18px;text-align:center;font-size:clamp(17px,3.6vw,22px);line-height:1.4;min-height:3.2em;color:var(--sm-ink)}
-.sm-sec{position:absolute;top:12px;left:14px;z-index:1;font:600 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--sm-accent);opacity:.85}
+.sm-stage::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    linear-gradient(180deg,#7d1a22 0,#5a1016 4.5%,rgba(90,16,22,.55) 5.5%,transparent 7.5%),
+    radial-gradient(55% 14% at 50% 103%,rgba(255,214,140,.22),transparent 72%),
+    linear-gradient(90deg,#4f0d13 0,#8e1d26 2.4%,#5a1016 4.8%,#8e1d26 7.2%,rgba(90,16,22,.6) 9%,transparent 10.5%,transparent 89.5%,rgba(90,16,22,.6) 91%,#8e1d26 92.8%,#5a1016 95.2%,#8e1d26 97.6%,#4f0d13 100%)}
+.sm-joe{max-height:52vh;z-index:1}
+.sm-line{position:relative;z-index:1;margin:0;padding:6px 18px 18px;text-align:center;font-size:clamp(17px,3.6vw,22px);line-height:1.4;min-height:3.2em;color:var(--sm-ink)}
+.sm-sec{position:absolute;top:12px;left:14px;z-index:2;font:600 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--sm-accent);opacity:.85}
 ${RIG_CSS}`;
 
 /** The stage: the live figure, the section label and the lyric caption, plus the rig data. */
