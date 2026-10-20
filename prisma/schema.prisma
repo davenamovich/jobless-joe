@@ -214,6 +214,8 @@ model BackendConfig {
   upUser          String   @default("")
   /// Comma-separated platform[] values, e.g. "tiktok,instagram,youtube"
   upPlatforms     String   @default("tiktok,instagram,youtube")
+  /// Facebook Page to post to when the profile manages several Pages
+  upFacebookPageId String  @default("")
 
   /// Autopilot: write + sing a new song on a timer, film it, optionally post it
   autoEnabled     Boolean  @default(false)
