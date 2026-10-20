@@ -75,14 +75,19 @@ function sanitize(cfg: Partial<BackendConfig>): BackendConfig {
     autoIntervalMin: Math.min(24 * 60, Math.max(15, Math.round(Number(cfg.autoIntervalMin) || AUTO_DEFAULT_INTERVAL_MIN))),
     autoPublish: !!cfg.autoPublish,
     autoChatId: String(cfg.autoChatId ?? "").trim(),
+    fishApiKey: (cfg.fishApiKey ?? "").trim(),
+    fishJoeVoiceId: (cfg.fishJoeVoiceId ?? "").trim(),
+    fishGuestVoiceId: (cfg.fishGuestVoiceId ?? "").trim(),
   };
 }
 
 /** Never hand API keys to the browser — only whether they exist. */
 function publicConfig(cfg: BackendConfig) {
-  const { openaiApiKey, prApiKey, ytClientSecret, ytRefreshToken, upApiKey, ...rest } = cfg;
+  const { openaiApiKey, prApiKey, ytClientSecret, ytRefreshToken, upApiKey, fishApiKey, ...rest } = cfg;
   return {
     ...rest,
+    hasFishKey: !!fishApiKey,
+    fishKeyMasked: fishApiKey ? maskKey(fishApiKey) : "",
     hasUpKey: !!upApiKey,
     upKeyMasked: upApiKey ? maskKey(upApiKey) : "",
     hasApiKey: !!openaiApiKey,
@@ -125,6 +130,7 @@ export async function PATCH(req: NextRequest) {
   // Same rule for the YouTube client secret: blank = keep the saved one.
   if (!body.ytClientSecret) merged.ytClientSecret = current.ytClientSecret;
   if (!body.upApiKey) merged.upApiKey = current.upApiKey;
+  if (!body.fishApiKey) merged.fishApiKey = current.fishApiKey;
 
   const cfg = sanitize(merged);
   try {
