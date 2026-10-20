@@ -63,6 +63,9 @@ function cfg(url: string): BackendConfig {
     autoIntervalMin: 60,
     autoPublish: false,
     autoChatId: "",
+    fishApiKey: "",
+    fishJoeVoiceId: "",
+    fishGuestVoiceId: "",
   };
 }
 

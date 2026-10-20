@@ -2,7 +2,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { buildSitdownVideoHtml, estimateSpeechSec, parseSitdownScript, SITDOWN_END_MS } from "./sitdown-video";
-import { joinClips } from "./sitdown-voice";
+import { joinClips, pcmToWav, wavPcm } from "./sitdown-voice";
 
 describe("sit-down script", () => {
   it("treats plain lines as Joe's monologue", () => {
@@ -62,5 +62,20 @@ describe("voiced script", () => {
     assert.equal(out.durationSec, 3.7);
     assert.equal(out.wav.toString("ascii", 0, 4), "RIFF");
     assert.equal(out.wav.readUInt32LE(40), out.wav.length - 44);
+  });
+});
+
+describe("streamed WAV (Fish Audio)", () => {
+  it("reads PCM even when the data size is a placeholder", () => {
+    const fmt = { numChannels: 1, sampleRate: 44100, byteRate: 88200, blockAlign: 2, bitsPerSample: 16 };
+    const wav = pcmToWav(Buffer.alloc(8820, 1), fmt);
+    assert.equal(wavPcm(wav).data.length, 8820);
+    for (const placeholder of [0, 0xffffffff]) {
+      const streamed = Buffer.from(wav);
+      streamed.writeUInt32LE(placeholder, 40);
+      const out = wavPcm(streamed);
+      assert.equal(out.data.length, 8820, `data size ${placeholder}`);
+      assert.equal(out.fmt.sampleRate, 44100);
+    }
   });
 });
