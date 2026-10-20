@@ -326,3 +326,18 @@ model StoryArc {
   /// JSON StoryArc
   arc       String
 }
+
+/// A Sit-down show Joe wrote (Morning Show or Ask Joe), so the next one
+/// doesn't repeat its letters, jokes or sign-offs.
+model ShowRecord {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  /// "morning" | "evening"
+  kind      String
+  title     String
+  /// JSON string[]: the letters or posts the show covered
+  items     String   @default("[]")
+  script    String
+
+  @@index([kind, createdAt])
+}
