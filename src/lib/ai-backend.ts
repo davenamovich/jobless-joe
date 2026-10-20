@@ -65,6 +65,9 @@ export interface BackendConfig {
   /** Facebook Page ID for Upload-Post (needed when several Pages are connected) */
   upFacebookPageId: string;
 
+  /** Groq API key for Whisper transcription */
+  groqApiKey: string;
+
   /** Autopilot: a new song every autoIntervalMin minutes */
   autoEnabled: boolean;
   autoIntervalMin: number;
@@ -128,6 +131,7 @@ const DEFAULT_CONFIG: BackendConfig = {
   upApiKey: "",
   upUser: "",
   upPlatforms: UP_DEFAULT_PLATFORMS,
+  groqApiKey: "",
   upFacebookPageId: "",
   autoEnabled: false,
   autoIntervalMin: AUTO_DEFAULT_INTERVAL_MIN,
@@ -181,6 +185,7 @@ function envDefaults(): BackendConfig {
     ytChannelTitle: "",
     ytPrivacy: process.env.YT_PRIVACY ?? "unlisted",
     ...envPublishing(),
+    groqApiKey: process.env.GROQ_API_KEY ?? "",
     fishApiKey: process.env.FISH_AUDIO_API_KEY ?? "",
     fishJoeVoiceId: process.env.FISH_JOE_VOICE_ID ?? "",
     fishGuestVoiceId: process.env.FISH_GUEST_VOICE_ID ?? "",
@@ -229,6 +234,7 @@ export async function loadBackendConfig(): Promise<BackendConfig> {
         autoIntervalMin: row.autoIntervalMin || AUTO_DEFAULT_INTERVAL_MIN,
         autoPublish: !!row.autoPublish,
         autoChatId: row.autoChatId || "",
+        groqApiKey: row.groqApiKey || process.env.GROQ_API_KEY || "",
         fishApiKey: row.fishApiKey || process.env.FISH_AUDIO_API_KEY || "",
         fishJoeVoiceId: row.fishJoeVoiceId || process.env.FISH_JOE_VOICE_ID || "",
         fishGuestVoiceId: row.fishGuestVoiceId || process.env.FISH_GUEST_VOICE_ID || "",
@@ -288,6 +294,7 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       upApiKey: cfg.upApiKey,
       upUser: cfg.upUser,
       upPlatforms: cfg.upPlatforms,
+      groqApiKey: cfg.groqApiKey,
       upFacebookPageId: cfg.upFacebookPageId,
       autoEnabled: cfg.autoEnabled,
       autoIntervalMin: cfg.autoIntervalMin,
@@ -323,6 +330,7 @@ export async function saveBackendConfig(cfg: BackendConfig): Promise<void> {
       upApiKey: cfg.upApiKey,
       upUser: cfg.upUser,
       upPlatforms: cfg.upPlatforms,
+      groqApiKey: cfg.groqApiKey,
       upFacebookPageId: cfg.upFacebookPageId,
       autoEnabled: cfg.autoEnabled,
       autoIntervalMin: cfg.autoIntervalMin,

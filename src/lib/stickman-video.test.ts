@@ -60,6 +60,17 @@ describe("stickman video page", () => {
   });
 });
 
+describe("Joe's TV", () => {
+  it("picks a slide from the lyric's topic, the same one for a repeated line", async () => {
+    const { beatToSlide } = await import("./stickman-tv");
+    const beat = (text: string) => ({ text, pose: "sing" as const, expression: "happy" as const });
+    assert.equal(beatToSlide(beat("I sent my resume online")).title, "APPLICATION FUNNEL");
+    assert.equal(beatToSlide(beat("the robots took my job")).title, "JOBS: ROBOTS vs JOE");
+    assert.equal(beatToSlide(beat("ghosted again")).kind, "pie");
+    assert.deepEqual(beatToSlide(beat("la la la")), beatToSlide(beat("la la la")));
+  });
+});
+
 describe("/video buttons", () => {
   const ref = (token: string): VideoPageRef => ({ token, url: `https://x.here.now/${token}`, title: token, createdAt: 0 });
 
@@ -92,6 +103,20 @@ describe("stickman rig", () => {
     const data = buildRigData([{ text: "my dog and me", pose: "stand", expression: "happy", prop: "dog" }]);
     assert.equal(data.beats[0].cx, 200, "floor props push Joe left");
     assert.ok(data.poses.stepL && data.poses.guns, "dance moves ship with the poses");
+  });
+
+  it("uses measured line timing when it fits, the estimate when it doesn't", () => {
+    const lyrics = "[VERSE]\nThey handed me a cardboard box\nNow I apply online all day\n[CHORUS]\nOh I'm jobless baby";
+    const page = (lineStarts?: number[] | null) => {
+      const html = buildStickmanVideoHtml({ title: "T", episodeLabel: "E", lyrics, audioFile: "song.mp3", durationSec: 60, lineStarts });
+      const rig = JSON.parse(/id="smData">([\s\S]*?)<\/script>/.exec(html)![1]);
+      return { rig: rig.beats.map((b: { at: number }) => b.at) };
+    };
+    const real = page([0.2, 0.45, 0.7]);
+    assert.deepEqual(real.rig, [0.2, 0.45, 0.7]);
+    const estimate = page();
+    assert.notDeepEqual(estimate.rig, real.rig);
+    assert.deepEqual(page([0.2, 0.45]).rig, estimate.rig, "wrong length falls back");
   });
 
   it("keeps the engine free of template holes and backticks (inlined verbatim)", async () => {

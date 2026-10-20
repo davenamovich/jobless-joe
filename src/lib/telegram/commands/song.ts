@@ -117,7 +117,8 @@ async function runAction(msg: TelegramMessage, action: ActionKey) {
   }
   const preset = EPISODES.find((e) => e.key === last.episodeTheme);
   await startSong(msg, {
-    episodeKey: last.episodeTheme,
+    // A dropped-in song is remixed as a custom song from its transcript (customScript).
+    episodeKey: last.episodeTheme === "upload" ? "custom" : last.episodeTheme,
     // Older bot songs were stored as "Telegram Request"; never feed that back.
     episodeLabel: preset?.label ?? CUSTOM_LABEL,
     topic: last.customTopic ?? undefined,
