@@ -20,6 +20,7 @@ import { MicLoader } from "@/components/joe/MicLoader";
 import { OutputDisplay } from "@/components/joe/OutputDisplay";
 import { PhoneDisplay } from "@/components/joe/PhoneDisplay";
 import { TrendingIdeas } from "@/components/joe/TrendingIdeas";
+import { SongIdeas } from "@/components/joe/SongIdeas";
 import { SettingsDialog } from "@/components/joe/SettingsDialog";
 import { SongPanel } from "@/components/joe/SongPanel";
 import { StoryBibleCard } from "@/components/joe/StoryBibleCard";
@@ -520,6 +521,15 @@ export default function Home() {
               disabled={isLoading}
               onPick={(idea) => {
                 // Leave the panel showing what was sung, so a remix has context.
+                setEpisodeKey("custom");
+                setCustomTopic(idea.topic);
+                handleAction("generate", idea.topic);
+              }}
+            />
+            <SongIdeas
+              className="mt-4"
+              disabled={isLoading}
+              onPick={(idea) => {
                 setEpisodeKey("custom");
                 setCustomTopic(idea.topic);
                 handleAction("generate", idea.topic);
