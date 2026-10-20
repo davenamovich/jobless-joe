@@ -178,3 +178,36 @@ export function songTopicFromChat(memory: JoeChatMemory): string {
   const facts = memory.facts.slice(-3).join("; ");
   return [said, facts && `(about them: ${facts})`].filter(Boolean).join(" ").slice(0, 600);
 }
+
+const BRIEF_SYSTEM =
+  "You are Jobless Joe's head writer. You turn a chat with a fan into a brief for one Jobless Joe song. Reply with only the brief, plain text.";
+
+/**
+ * The whole conversation as a song brief: what it's about, the painfully
+ * true details, and the title/hook Joe pitched if he pitched one. One model
+ * call; falls back to songTopicFromChat when the model is unavailable.
+ */
+export async function songBriefFromChat(memory: JoeChatMemory): Promise<string> {
+  const messages = normalizeChat(memory.messages);
+  const facts = normalizeFacts(memory.facts);
+  const fallback = songTopicFromChat({ messages, facts });
+  if (!messages.some((m) => m.role === "user")) return fallback;
+  try {
+    const cfg = await loadBackendConfig();
+    const res = await chat(
+      BRIEF_SYSTEM,
+      `Write a brief for a Jobless Joe song based on this whole conversation.${knows(facts)}
+
+CONVERSATION
+${transcript(messages)}
+
+The brief, under 90 words: what the song is about from the fan's side, the 2-4 most specific and funny details they shared (keep their own words where you can), and the title and hook line if Joe pitched one. Keep it about the job market, using AI, or Joe's AI bootcamp. No preamble, no markdown.`,
+      cfg
+    );
+    const brief = res.content.replace(/\s+/g, " ").trim().slice(0, 600);
+    return brief || fallback;
+  } catch (e) {
+    console.error("[joe-chat] song brief failed", e);
+    return fallback;
+  }
+}
