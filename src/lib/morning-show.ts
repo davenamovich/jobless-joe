@@ -15,6 +15,7 @@
 
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { DEFAULT_LANGUAGE, getLanguage } from "@/lib/languages";
+import { freshnessNote, recentShows, recordShow } from "@/lib/show-history";
 import { SOMBER, fetchHackerNews } from "@/lib/trending";
 import {
   assembleDescription,
@@ -372,13 +373,16 @@ export async function writeMorningMonologue(
   youtube: { title: string; description: string; tags: string[] };
 }> {
   if (!posts.length) throw new Error("No posts to talk about.");
-  const [cfg, searchQuestions] = await Promise.all([
+  const [cfg, searchQuestions, past] = await Promise.all([
     loadBackendConfig(),
     getSearchQuestions(),
+    recentShows("morning"),
   ]);
   const result = await chat(
     MONOLOGUE_SYSTEM,
-    monologuePrompt(posts, searchQuestions) + showLanguageNote(language),
+    monologuePrompt(posts, searchQuestions) +
+      freshnessNote(past, "posts") +
+      showLanguageNote(language),
     cfg,
   );
   const out = parseMonologue(result.content);
@@ -391,6 +395,11 @@ export async function writeMorningMonologue(
   const youtube = morningShowYouTube(out, {
     fallbackTitle: `Joe's Morning Show, ${day}`,
     courseUrl: cfg.courseUrl,
+  });
+  await recordShow("morning", {
+    title: youtube.title,
+    items: posts.map((p) => p.title),
+    script: out.script,
   });
   return {
     title: youtube.title,
