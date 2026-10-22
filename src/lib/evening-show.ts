@@ -16,6 +16,14 @@ import { SOMBER } from "@/lib/trending";
 import { getLanguage } from "@/lib/languages";
 import { freshnessNote, itemKey, recentShows, recordShow } from "@/lib/show-history";
 import {
+  askJoeAddendum,
+  AUDIENCE_LETTER_TOPICS,
+  audienceBlock,
+  type AskJoeSettings,
+  type SegmentRequest,
+} from "@/lib/ask-joe";
+import { todaysHeadlines } from "@/lib/ask-joe-server";
+import {
   fetchRedditTop,
   getSearchQuestions,
   morningShowYouTube,
@@ -144,8 +152,15 @@ export function parseLetters(raw: string): ViewerLetter[] {
 }
 
 /** The request for made-up letters: fresh topics, a couple of cast members, nothing already answered. */
-export function madeUpLettersPrompt(count: number, avoid: string[], rand: () => number = Math.random): string {
-  const topics = pickSome(LETTER_TOPICS, count, rand);
+export function madeUpLettersPrompt(
+  count: number,
+  avoid: string[],
+  rand: () => number = Math.random,
+  /** Topics for Joe's own audience (over 40, gig work, AI beginners), tried first. */
+  audienceTopics: string[] = [],
+): string {
+  const mine = pickSome(audienceTopics, Math.ceil(count / 2), rand);
+  const topics = [...mine, ...pickSome(LETTER_TOPICS, count - mine.length, rand)];
   const cast = pickSome(CAST_MEMBERS, 2, rand);
   const done = avoid.length
     ? `\n\nJoe already answered these. Don't repeat them or anything close:\n${avoid.map((q) => `- ${q.slice(0, 160)}`).join("\n")}`
@@ -153,19 +168,19 @@ export function madeUpLettersPrompt(count: number, avoid: string[], rand: () => 
   return `Write ${count} different letters, one about each of these problems:\n${topics.map((t) => `- ${t}`).join("\n")}\n\nIf a cast member fits, use one of these tonight: ${cast.join("; ")}. Most letters are about the viewer's own boss or coworkers, not the cast.${done}`;
 }
 
-async function madeUpLetters(count: number, language?: string, avoid: string[] = []): Promise<ViewerLetter[]> {
+async function madeUpLetters(count: number, language?: string, avoid: string[] = [], settings?: AskJoeSettings): Promise<ViewerLetter[]> {
   const lang = getLanguage(language);
   const inLanguage = lang.key === "en" ? "" : ` Write the letters and sign-offs in ${lang.label}. ${lang.prompt}`;
   const result = await chat(
-    LETTERS_SYSTEM,
-    `${madeUpLettersPrompt(count, avoid)}${inLanguage}`,
+    settings ? `${LETTERS_SYSTEM}\n\n${audienceBlock(settings)}\n\nThe viewers writing in are people like this: most letters are from someone over 40, in their own plain voice.` : LETTERS_SYSTEM,
+    `${madeUpLettersPrompt(count, avoid, Math.random, settings ? AUDIENCE_LETTER_TOPICS : [])}${inLanguage}`,
     await loadBackendConfig(),
   );
   return parseLetters(result.content).slice(0, count);
 }
 
 /** Viewer letters for tonight's show. Falls back to made-up letters if Reddit is down. */
-export async function getViewerLetters(count: number, source: LetterSource, language?: string): Promise<ViewerLetter[]> {
+export async function getViewerLetters(count: number, source: LetterSource, language?: string, settings?: AskJoeSettings): Promise<ViewerLetter[]> {
   const n = clampLetters(count);
   const answered = (await recentShows("evening")).flatMap((s) => s.items);
   const used = new Set(answered.map(itemKey));
@@ -177,7 +192,7 @@ export async function getViewerLetters(count: number, source: LetterSource, lang
       })
     : [];
   const need = n - reddit.length;
-  const madeUp = need > 0 ? await madeUpLetters(need, language, answered.slice(0, 30)) : [];
+  const madeUp = need > 0 ? await madeUpLetters(need, language, answered.slice(0, 30), settings) : [];
   const letters = [...reddit, ...madeUp];
   if (!letters.length) throw new Error("Joe's mailbag is empty. Try again.");
   return letters;
@@ -190,14 +205,14 @@ ${CAST}
 You get tonight's letters. Some came from real online posts: use only the dilemma, rewrite it as a short letter in your own words, give it a funny anonymous sign-off, and never include usernames, real names, employers or other identifying details. Letters that already have a sign-off can be used as written.
 
 Structure:
-- Cold open: one or two lines welcoming viewers to Ask Joe, plus a fresh joke about something that happened to Joe today.
+- Open (see THE RETENTION FORMAT below): a hook line first, then a two-or-three-line lock-in that promises a payoff. Never a "Welcome to Ask Joe" greeting.
 - For each letter, in order:
   1. Joe reads the letter out loud ("Dear Joe…"), with the sign-off.
   2. His reaction: one line of disbelief.
   3. His advice: escalate into absurd, theatrical advice, one or two beats. Invent a new bit for each letter that fits that letter's problem; never use the same kind of bit twice in a show.
   4. Then land it with ONE genuinely useful tip a viewer could actually use (get it in writing, document dates, ask for the raise with numbers, use AI to draft the email). Keep it correct; never give legal advice beyond "check your local rules or talk to a lawyer".
-  5. A one-line transition to the next letter.
-- Sign-off: one line, the best laugh. A light nod to the AI bootcamp is fine; never a sales pitch.
+  5. A rehook line into the next letter: it escalates or teases a specific detail, never a plain "Next up" handover.
+- Close: the promised payoff as the best laugh of the show, then one natural CTA line (THE RETENTION FORMAT below).
 
 Rules:
 - Every line must make literal sense said out loud. One idea per line. Short, punchy sentences.
@@ -231,24 +246,42 @@ export function eveningShowPrompt(letters: ViewerLetter[], searchQuestions: stri
 }
 
 /** Joe's evening show answering these letters. */
-export async function writeEveningShow(letters: ViewerLetter[], language?: string): Promise<{
+export async function writeEveningShow(
+  letters: ViewerLetter[],
+  language?: string,
+  /** Ask Joe's settings and, for a segment that is not the mailbag, what it is. Absent: the plain mailbag. */
+  opts: { settings?: AskJoeSettings; segment?: SegmentRequest } = {},
+): Promise<{
   title: string;
   script: string;
   questions: string[];
   youtube: { title: string; description: string; tags: string[] };
 }> {
-  if (!letters.length) throw new Error("No letters to answer.");
-  const [cfg, searchQuestions] = await Promise.all([loadBackendConfig(), getSearchQuestions()]);
+  const segment: SegmentRequest = opts.segment ?? { kind: "letters" };
+  if (!letters.length && segment.kind === "letters") throw new Error("No letters to answer.");
+  const [cfg, searchQuestions, headlines] = await Promise.all([
+    loadBackendConfig(),
+    getSearchQuestions(),
+    opts.settings?.useNews ? todaysHeadlines(6) : Promise.resolve([]),
+  ]);
+  const extra = opts.settings ? askJoeAddendum(opts.settings, headlines, segment) : { system: "", user: "" };
   const past = await recentShows("evening");
+  const body = letters.length
+    ? eveningShowPrompt(letters, searchQuestions)
+    : `Real searches people are typing right now (Google autocomplete):\n${searchQuestions.map((q) => `- ${q}`).join("\n")}\n\nWrite tonight's Ask Joe segment.`;
   const result = await chat(
-    SHOW_SYSTEM,
-    eveningShowPrompt(letters, searchQuestions) + freshnessNote(past, "letters") + showLanguageNote(language),
+    extra.system ? `${SHOW_SYSTEM}\n\n${extra.system}` : SHOW_SYSTEM,
+    `${body}${extra.user ? `\n\n${extra.user}` : ""}${freshnessNote(past, letters.length ? "letters" : "segments")}${showLanguageNote(language)}`,
     cfg,
   );
   const out = parseMonologue(result.content);
   if (!out) throw new Error("Joe lost the mailbag. Try again.");
   const day = new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   const youtube = morningShowYouTube(out, { fallbackTitle: `Ask Joe, ${day}`, courseUrl: cfg.courseUrl });
-  await recordShow("evening", { title: youtube.title, items: letters.map((l) => l.question), script: out.script });
+  await recordShow("evening", {
+    title: youtube.title,
+    items: letters.length ? letters.map((l) => l.question) : [`${segment.kind}: ${segment.topic ?? youtube.title}`],
+    script: out.script,
+  });
   return { title: youtube.title, script: out.script, questions: out.questions, youtube };
 }
