@@ -28,6 +28,7 @@
 
 import { POSES, beatStarts, type PoseDef, type StickmanBeat, type StickmanExpression, type StickmanProp } from "./stickman";
 import type { Scene } from "./stickman-scenes";
+import { VISEME_JS } from "./viseme";
 import { SCENE_CSS, SET_SVG, itemSvg, sceneLayout } from "./stickman-sets";
 
 const GROUND = 392;
@@ -199,8 +200,11 @@ type RigInput = StickmanBeat & Partial<Pick<Scene, "set" | "item" | "label" | "p
  * video) bring a set, an item and their own start fractions; plain beats
  * (the song page) are spread by word count.
  */
-export function buildRigData(beats: RigInput[], opts: { starts?: number[] } = {}): RigData {
-  const starts = opts.starts && opts.starts.length === beats.length ? opts.starts : beatStarts(beats);
+export function buildRigData(beats: RigInput[], opts: { starts?: number[]; ends?: number[] } = {}): RigData {
+  const timed = !!opts.starts && opts.starts.length === beats.length;
+  const starts = timed ? opts.starts! : beatStarts(beats);
+  // Ends only mean something next to the real starts they were measured with.
+  const ends = timed && opts.ends && opts.ends.length === beats.length ? opts.ends : null;
   const sets: Record<string, string> = {};
   return {
     beats: beats.map((b, i) => {
@@ -209,6 +213,7 @@ export function buildRigData(beats: RigInput[], opts: { starts?: number[] } = {}
       if (b.set) sets[b.set] = SET_SVG[b.set];
       return {
         at: starts[i],
+        ...(ends ? { end: Math.max(starts[i], ends[i]) } : {}),
         pose: b.pose,
         expr: b.expression,
         text: b.text,
@@ -304,6 +309,7 @@ export const JOE_RIG_JS = String.raw`
   function copyPose(p) { var o = {}; KEYS.forEach(function (k) { var v = p[k] || [0, 0]; o[k] = [v[0], v[1]]; }); return o; }
   function lerpPose(a, b, t) { var o = {}; KEYS.forEach(function (k) { o[k] = [a[k][0] + (b[k][0] - a[k][0]) * t, a[k][1] + (b[k][1] - a[k][1]) * t]; }); return o; }
   function P(p) { return p[0].toFixed(1) + " " + p[1].toFixed(1); }
+  ${VISEME_JS}
 
   // Loudness curve (50/s, 0..1) and tempo from the song itself.
   function analyse(audio, done) {
@@ -418,6 +424,29 @@ export const JOE_RIG_JS = String.raw`
         return true;
       });
     }
+    // When each word of beat idx is sung: spread over the frames where the voice is actually loud.
+    var wtFor = -1, wtDur = 0, wtList = [], wtWords = [];
+    function beatWords(idx, durMs) {
+      if (wtFor === idx && wtDur === durMs && (music ? 1 : 0) === wtList.mu) return wtList;
+      var bt = beats[idx], words = String(bt.text || "").split(/\s+/).filter(Boolean), cum = [], tot = 0, out = [], k;
+      var a = bt.at * durMs, e = bt.end != null ? bt.end * durMs : (idx + 1 < beats.length ? beats[idx + 1].at * durMs : durMs);
+      for (k = 0; k < words.length; k++) { cum.push(tot); tot += words[k].length + 2; }
+      var voiced = [], f;
+      if (music) for (f = Math.floor(a / 20); f < Math.min(music.env.length, Math.ceil(e / 20)); f++) if (music.env[f] > 0.12) voiced.push(f);
+      for (k = 0; k < words.length; k++) {
+        out.push(voiced.length >= 5 ? Math.max(a, voiced[Math.floor((cum[k] / (tot || 1)) * voiced.length)] * 20) : a + (cum[k] / (tot || 1)) * (e - a));
+      }
+      wtFor = idx; wtDur = durMs; wtWords = words; wtList = out; wtList.mu = music ? 1 : 0; wtList.end = e;
+      return out;
+    }
+    function wordShape(ms, idx, durMs) {
+      var wt = beatWords(idx, durMs), cur = -1, k;
+      for (k = 0; k < wt.length; k++) if (ms >= wt[k]) cur = k;
+      if (cur < 0) return "mid";
+      var end = cur + 1 < wt.length ? wt[cur + 1] : wtList.end;
+      return visemeOf(wtWords[cur], clamp((ms - wt[cur]) / Math.max(80, end - wt[cur]), 0, 1));
+    }
+    var mLook = { w: 1, h: 1 };
     function loud(ms) {
       if (music) { var i = Math.floor(ms / 20); return i >= 0 && i < music.env.length ? music.env[i] : 0; }
       return 0.35 + 0.35 * Math.sin(ms / 95) * Math.sin(ms / 210); // no audio data: a plausible chatter
@@ -510,8 +539,11 @@ export const JOE_RIG_JS = String.raw`
 
       // 2. Lip sync.
       var lv = playing ? loud(songMs) : 0, open = singing || lv > 0.45 ? clamp((lv - 0.12) / 0.6, 0, 1) : 0;
-      if (open > 0.06) {
-        mouth.setAttribute("d", "M-9 12 Q0 " + (12 + 20 * open).toFixed(1) + " 9 12 Q0 " + (12 + 4 * open).toFixed(1) + " -9 12 Z");
+      var shape = open > 0.06 && playing ? wordShape(songMs, idx, durMs) : "mid", want = MOUTH_LOOK[shape] || MOUTH_LOOK.mid;
+      mLook.w += (want[0] - mLook.w) * 0.45; mLook.h += (Math.max(want[1], 0.25) - mLook.h) * 0.45;
+      if (open > 0.06 && shape !== "closed") {
+        var mw = 9 * mLook.w, mh = mLook.h;
+        mouth.setAttribute("d", "M-" + mw.toFixed(1) + " 12 Q0 " + (12 + 20 * open * mh).toFixed(1) + " " + mw.toFixed(1) + " 12 Q0 " + (12 + 4 * open * mh).toFixed(1) + " -" + mw.toFixed(1) + " 12 Z");
         mouth.classList.add("open");
       } else {
         mouth.setAttribute("d", data.mouths[b.expr] || data.mouths.neutral);
@@ -577,12 +609,19 @@ export const STICKMAN_STAGE_CSS = `
 .sm-joe{max-height:52vh;z-index:1}
 .sm-line{position:relative;z-index:1;margin:0;padding:6px 18px 18px;text-align:center;font-size:clamp(17px,3.6vw,22px);line-height:1.4;min-height:3.2em;color:var(--sm-ink)}
 .sm-sec{position:absolute;top:12px;left:14px;z-index:2;font:600 10px/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--sm-accent);opacity:.85}
-.sm-line.punch{color:var(--sm-accent);font-weight:700;animation:sm-punchline .6s cubic-bezier(.3,1.5,.5,1) both}
+.sm-line{transition:opacity .35s}
+.sm-line.off{opacity:0}
+.sm-line.in{animation:sm-capin .32s ease-out backwards}
+@keyframes sm-capin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+.sm-line .sm-w{transition:opacity .18s}
+.sm-line .sm-w{opacity:.42}
+.sm-line .sm-w.on{opacity:1}
+.sm-line.punch{color:var(--sm-accent);font-weight:700;animation:sm-punchline .6s cubic-bezier(.3,1.5,.5,1) backwards}
 @keyframes sm-punchline{from{transform:scale(.8);opacity:0}to{transform:none;opacity:1}}
 ${RIG_CSS}${SCENE_CSS}`;
 
 /** The stage: the live figure, the section label and the lyric caption, plus the rig data. */
-export function stickmanStageHtml(beats: RigInput[], tie: string, opts: { starts?: number[] } = {}): string {
+export function stickmanStageHtml(beats: RigInput[], tie: string, opts: { starts?: number[]; ends?: number[] } = {}): string {
   if (beats.length === 0) return "";
   return `<section class="sm-stage" id="smStage" aria-label="Joe acts out the song">
   <span class="sm-sec" id="smSec">${escHtml(beats[0].section ?? "")}</span>
@@ -607,17 +646,42 @@ export function stickmanStageScript(audioId: string, opts: { external?: boolean 
   if (!stage || !dataEl || !window.JoeRig) return;
   var data = JSON.parse(dataEl.textContent || "{}");
   var rig = window.JoeRig.mount(stage.querySelector(".sm-joe"), data, a);
-  var line = document.getElementById("smLine"), sec = document.getElementById("smSec"), shown = -1;
+  var line = document.getElementById("smLine"), sec = document.getElementById("smSec"), shown = -2, words = [];
+  var beats = data.beats || [];
+  function clamp01(v) { return v < 0 ? 0 : v > 1 ? 1 : v; }
+  // The caption: each lyric fades in as it is sung, lights up word by word across
+  // the sung span (the measured end when we have one, else about a second plus half
+  // a second a word), clears through a long gap or a break, and is blank in the intro.
+  function show(i) {
+    var b = i >= 0 ? beats[i] || { text: "", sec: "" } : null;
+    line.innerHTML = ""; words = [];
+    String(b ? b.text : "").split(/\\s+/).filter(Boolean).forEach(function (w) {
+      var s = document.createElement("span");
+      s.className = "sm-w"; s.textContent = w;
+      line.appendChild(s); line.appendChild(document.createTextNode(" "));
+      words.push(s);
+    });
+    line.className = "sm-line" + (b && b.punch ? " punch" : "");
+    void line.offsetWidth; line.classList.add("in");
+    sec.textContent = b ? b.sec : "";
+  }
   window.joeStage = {
     update: function (ms, durMs, playing) {
       var i = rig.update(ms, durMs, playing);
-      if (i !== shown) {
-        shown = i;
-        var b = data.beats[i] || { text: "", sec: "" };
-        line.textContent = b.text;
-        line.classList.toggle("punch", !!b.punch);
-        sec.textContent = b.sec;
+      var d = durMs > 0 ? durMs : 60000, f = ms / d;
+      var cap = !beats.length || f < beats[0].at ? -1 : i;
+      if (cap !== shown) { shown = cap; show(cap); }
+      var b = cap >= 0 ? beats[cap] : null, on = false;
+      if (b) {
+        var a = b.at * d, next = cap + 1 < beats.length ? beats[cap + 1].at * d : d;
+        var e = b.end != null ? b.end * d : Math.min(next, a + 1000 + 450 * words.length);
+        // The punchline is the joke: it stays up until the end card.
+        on = ms <= e + 900 || !!b.punch;
+        var tot = 0, acc = 0, k, p = clamp01((ms - a) / Math.max(1, e - a));
+        for (k = 0; k < words.length; k++) tot += words[k].textContent.length + 1;
+        for (k = 0; k < words.length; k++) { words[k].classList.toggle("on", acc / tot <= p); acc += words[k].textContent.length + 1; }
       }
+      line.classList.toggle("off", !on);
       return i;
     }
   };

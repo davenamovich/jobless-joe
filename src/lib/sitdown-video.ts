@@ -16,6 +16,8 @@
  * counts as one) are voiced but never shown in the captions.
  */
 
+import { VISEME_JS } from "./viseme";
+
 export type SitdownGesture = "rest" | "talk" | "cards" | "point" | "shrug" | "listen";
 
 export interface SitdownLine {
@@ -43,10 +45,19 @@ export interface SitdownVideoData {
   durationSec: number;
   /** Exact start of each line in ms (known when we voiced the script). */
   startsMs?: number[];
+  /** Where each line's speech stops, in ms: when captions clear and the close begins. */
+  endsMs?: number[];
+  /** Silence before the first word, in ms: the page fades up in it. */
+  leadMs?: number;
+  /** When each word of each line starts, in ms (a word-level transcript); needs startsMs. */
+  wordStartsMs?: number[][];
 }
 
-/** How long the end card holds after the talk. */
-export const SITDOWN_END_MS = 2500;
+/**
+ * After the last word: the caption clears, Joe winks, the stage dissolves into
+ * the end card, which holds and then fades to black.
+ */
+export const SITDOWN_END_MS = 3000;
 
 const JOE_LABEL = /^(jobless\s+joe|joe|host)$/i;
 const MAX_CAPTION = 120;
@@ -133,6 +144,48 @@ export function parseSitdownScript(script: string): SitdownScript {
 export function estimateSpeechSec(script: SitdownScript): number {
   const words = script.lines.reduce((n, l) => n + l.text.split(/\s+/).length, 0);
   return Math.max(5, Math.round(words / 2.5 + script.lines.length * 0.35));
+}
+
+const CAP_WORDS = 5;
+const CAP_CHARS = 26;
+
+/**
+ * How a caption line's words go on screen, as groups of word indexes: a
+ * sentence end always closes a group, a comma does once it has two words, and
+ * a run too long for one screen is split evenly ("that's just the / building
+ * breathing." rather than five words and then one left dangling).
+ */
+export function captionGroups(words: string[]): number[][] {
+  const runs: number[][] = [];
+  let run: number[] = [];
+  words.forEach((w, i) => {
+    run.push(i);
+    if (/[.!?…]["')\]]*$/.test(w) || (/[,;:—]["')\]]*$/.test(w) && run.length >= 2)) {
+      runs.push(run);
+      run = [];
+    }
+  });
+  if (run.length) runs.push(run);
+  const out: number[][] = [];
+  for (const r of runs) {
+    const len = r.map((i) => words[i].length + 1);
+    const total = len.reduce((a, b) => a + b, 0);
+    const k = Math.max(Math.ceil(r.length / CAP_WORDS), Math.ceil(total / CAP_CHARS));
+    let cur: number[] = [];
+    let acc = 0;
+    let made = 0;
+    r.forEach((wi, j) => {
+      if (cur.length && made < k - 1 && acc + len[j] / 2 > (total * (made + 1)) / k) {
+        out.push(cur);
+        cur = [];
+        made++;
+      }
+      cur.push(wi);
+      acc += len[j];
+    });
+    out.push(cur);
+  }
+  return out;
 }
 
 function esc(s: string): string {
@@ -229,12 +282,14 @@ const SITDOWN_JS = String.raw`
     listen: { L: [152, 290, 180, 312], R: [230, 308, 198, 222] }
   };
   var GUEST = { rest: { L: [374, 306, 368, 334], R: [426, 306, 434, 334] }, talk: { L: [374, 306, 368, 334], R: [434, 294, 454, 266] } };
+  ${VISEME_JS}
   function lerp(a, b, t) { return a.map(function (v, i) { return v + (b[i] - v) * t; }); }
   function arm(sx, sy, p) { return "M" + sx + " " + sy + " L" + p[0].toFixed(1) + " " + p[1].toFixed(1) + " L" + p[2].toFixed(1) + " " + p[3].toFixed(1); }
 
   window.SitDown = {
     mount: function (data, audio) {
-      var lines = data.lines, starts = data.starts, hasGuest = !!$("guest");
+      var lines = data.lines, starts = data.starts, ends = data.ends, lead = data.lead || 0;
+      var hasGuest = !!$("guest");
       var env = null;
       (function analyse() {
         var src = audio && (audio.currentSrc || audio.getAttribute("src"));
@@ -258,17 +313,71 @@ const SITDOWN_JS = String.raw`
         if (env) { var i = Math.floor(ms / 20); return i >= 0 && i < env.length ? env[i] : 0; }
         return 0.4 + 0.4 * Math.sin(ms / 90) * Math.sin(ms / 230); // no audio data: plausible chatter
       }
-      // Line start times: exact when known, else shared out by word count.
-      var weights = lines.map(function (l) { return l.text.split(/\s+/).length + 1; });
+      // Line start times: exact when known, else shared out by word count after the lead-in.
+      var weights = lines.map(function (l) { return l.words.length + 1; });
       var total = weights.reduce(function (a, b) { return a + b; }, 0) || 1;
-      function lineAt(ms, durMs) {
-        var idx = -1, k, acc = 0;
-        for (k = 0; k < lines.length; k++) {
-          var at = starts ? starts[k] : (acc / total) * durMs;
-          acc += weights[k];
-          if (ms >= at) idx = k;
+      function lineStarts(endMs) {
+        if (starts) return starts;
+        var acc = 0, out = [], span = Math.max(1, endMs - lead);
+        for (var k = 0; k < lines.length; k++) { out.push(lead + (acc / total) * span); acc += weights[k]; }
+        return out;
+      }
+      function lineAt(ms, S) { var idx = -1; for (var k = 0; k < S.length; k++) if (ms >= S[k]) idx = k; return idx; }
+      // Where line i's speech stops: exact when known, else just short of the next line.
+      function lineEnd(i, S, endMs) {
+        if (ends) return ends[i];
+        var next = i + 1 < S.length ? S[i + 1] : endMs;
+        return S[i] + Math.max(300, (next - S[i]) * 0.92);
+      }
+
+      // Captions: a few words at a time, the spoken word lit. Words are spread over
+      // the frames where Joe is actually talking, so a pause mid-line holds the highlight.
+      function wordTimes(i, S, endMs) {
+        if (lines[i].wt) return lines[i].wt; // measured, word by word
+        var a = S[i], b = Math.max(a + 200, lineEnd(i, S, endMs));
+        var w = lines[i].words, cum = [], tot = 0, out = [], k;
+        for (k = 0; k < w.length; k++) { cum.push(tot); tot += w[k].length + 2; }
+        if (env) {
+          var voiced = [], f, fb = Math.min(env.length, Math.ceil(b / 20));
+          for (f = Math.floor(a / 20); f < fb; f++) if (env[f] > 0.12) voiced.push(f);
+          if (voiced.length >= 5) {
+            for (k = 0; k < w.length; k++) out.push(Math.max(a, voiced[Math.floor((cum[k] / tot) * voiced.length)] * 20 - 40));
+            return out;
+          }
         }
-        return idx;
+        for (k = 0; k < w.length; k++) out.push(a + (cum[k] / (tot || 1)) * (b - a));
+        return out;
+      }
+      var capLine = -1, capChunk = -1, capOut = true, spans = [], wt = null, wtKey = "";
+      function renderChunk(i, c) {
+        cap.innerHTML = ""; spans = [];
+        lines[i].groups[c].forEach(function (wi) {
+          var s = document.createElement("span");
+          s.className = "w";
+          s.textContent = lines[i].words[wi];
+          cap.appendChild(s); cap.appendChild(document.createTextNode(" "));
+          spans.push({ el: s, wi: wi });
+        });
+        cap.classList.remove("in", "out"); void cap.offsetWidth; cap.classList.add("in");
+      }
+      function captions(ms, S, endMs) {
+        // A caption lands a beat before the voice and clears once the voice has stopped for a moment.
+        var idx = lineAt(ms + 90, S);
+        if (idx < 0 || ms > lineEnd(idx, S, endMs) + 650) {
+          if (!capOut) { cap.classList.add("out"); capOut = true; }
+          return;
+        }
+        var key = idx + ":" + endMs + ":" + (env ? 1 : 0);
+        if (wtKey !== key) { wt = wordTimes(idx, S, endMs); wtKey = key; }
+        var cur = -1, k, c = 0, groups = lines[idx].groups;
+        for (k = 0; k < wt.length; k++) if (ms + 40 >= wt[k]) cur = k;
+        for (k = 0; k < groups.length; k++) if (groups[k].indexOf(Math.max(cur, 0)) >= 0) c = k;
+        if (idx !== capLine || c !== capChunk || capOut) { capLine = idx; capChunk = c; capOut = false; renderChunk(idx, c); }
+        var talking = ms < lineEnd(idx, S, endMs);
+        for (k = 0; k < spans.length; k++) {
+          spans[k].el.classList.toggle("on", spans[k].wi <= cur);
+          spans[k].el.classList.toggle("now", talking && spans[k].wi === cur);
+        }
       }
 
       var jArmL = $("jArmL"), jArmR = $("jArmR"), jTorso = $("jTorso"), jTie = $("jTie"), jHead = $("jHead"), jEyes = $("jEyes"), jWink = $("jWink");
@@ -278,34 +387,54 @@ const SITDOWN_JS = String.raw`
       var from = JOE.rest, to = JOE.rest, poseAt = 0, gFrom = GUEST.rest, gTo = GUEST.rest, gAt = 0;
       var lastIdx = -2, nextBlink = 1800, blinkUntil = 0, t0 = performance.now(), lastLoud = 0;
 
-      function mouth(path, oval, open) {
-        if (open > 0.08) {
+      // The mouth: loudness decides how open it is, the word being said decides its shape.
+      var looks = {};
+      function mouth(path, oval, open, shape) {
+        var key = oval.id || "m", st = looks[key] || (looks[key] = { w: 1, h: 1, rx: parseFloat(oval.getAttribute("rx")) || 6 });
+        var want = MOUTH_LOOK[shape] || MOUTH_LOOK.mid;
+        st.w += (want[0] - st.w) * 0.45; st.h += (Math.max(want[1], 0.25) - st.h) * 0.45;
+        if (open > 0.08 && shape !== "closed") {
           path.setAttribute("display", "none");
           oval.setAttribute("display", "inline");
-          oval.setAttribute("ry", (1.5 + 8 * open).toFixed(1));
+          oval.setAttribute("rx", (st.rx * st.w).toFixed(2));
+          oval.setAttribute("ry", ((1.5 + 8 * open) * st.h).toFixed(2));
         } else {
           path.setAttribute("display", "inline");
           oval.setAttribute("display", "none");
         }
       }
+      // The shape for the word being said at ms in line idx (word times as the captions use them).
+      var mwKey = "", mwt = null;
+      function shapeAt(ms, idx, S, endMs) {
+        if (idx < 0) return "mid";
+        var key = idx + ":" + endMs + ":" + (env ? 1 : 0);
+        if (mwKey !== key) { mwt = wordTimes(idx, S, endMs); mwKey = key; }
+        var w = lines[idx].words, k, cur = -1;
+        for (k = 0; k < mwt.length; k++) if (ms >= mwt[k]) cur = k;
+        if (cur < 0) return "mid";
+        var a = mwt[cur], b = cur + 1 < mwt.length ? mwt[cur + 1] : lineEnd(idx, S, endMs);
+        return visemeOf(w[cur], clamp((ms - a) / Math.max(80, b - a), 0, 1));
+      }
 
       return {
-        update: function (ms, durMs, playing) {
+        /**
+         * Moves the show to ms. endMs is when the last word is said; after it
+         * comes the close. started is false until the show is played.
+         */
+        update: function (ms, endMs, playing, started) {
           var now = performance.now(), t = (now - t0) / 1000;
-          var idx = lineAt(ms, durMs), line = idx >= 0 ? lines[idx] : null;
-          var speaker = line ? line.speaker : "joe";
+          var S = lineStarts(endMs);
+          var idx = lineAt(ms, S), line = idx >= 0 ? lines[idx] : null;
+          var after = lines.length > 0 && ms > endMs;
+          var speaker = line ? line.speaker : "joe", live = line && !after;
           var gesture = line ? line.gesture : lines.length ? "rest" : ["talk", "rest", "cards", "point"][Math.floor(ms / 4000) % 4];
-          if (!playing && ms === 0) gesture = "rest";
+          if ((!playing && ms === 0) || after) gesture = "rest";
           if (idx !== lastIdx) {
             lastIdx = idx;
-            if (line) {
-              cap.textContent = line.text;
-              who.textContent = hasGuest ? line.name : "";
-              cap.classList.remove("in"); void cap.offsetWidth; cap.classList.add("in");
-            } else if (!lines.length) {
-              cap.textContent = "";
-            }
+            if (line) who.textContent = hasGuest ? line.name : "";
           }
+          captions(ms, S, endMs);
+          if (who && after) who.textContent = "";
           var target = JOE[gesture] || JOE.rest;
           if (target !== to) { from = { L: lerp(from.L, to.L, ease(clamp((now - poseAt) / 450, 0, 1))), R: lerp(from.R, to.R, ease(clamp((now - poseAt) / 450, 0, 1))) }; to = target; poseAt = now; }
           var k = ease(clamp((now - poseAt) / 450, 0, 1));
@@ -330,15 +459,16 @@ const SITDOWN_JS = String.raw`
           // Head: tilts while he talks, turns and nods toward a talking guest.
           var hx = 190, tilt = Math.sin(t * 0.9) * 3;
           if (joeTalks) tilt += (lastLoud - 0.3) * 6;
-          if (speaker === "guest" && line) { hx += 5; tilt = 7 + Math.sin(t * 3.2) * 2.5; }
+          if (speaker === "guest" && live) { hx += 5; tilt = 7 + Math.sin(t * 3.2) * 2.5; }
           jHead.setAttribute("transform", "translate(" + hx + " " + (186 + breathe + lean).toFixed(1) + ") rotate(" + tilt.toFixed(1) + ")");
-          jEyes.setAttribute("transform", (speaker === "guest" && line ? "translate(4 0) " : "") + (now < blinkUntil ? "translate(0 -4.5) scale(1 .1)" : ""));
+          jEyes.setAttribute("transform", (speaker === "guest" && live ? "translate(4 0) " : "") + (now < blinkUntil ? "translate(0 -4.5) scale(1 .1)" : ""));
           if (now > nextBlink + t0) { blinkUntil = now + 120; nextBlink = now - t0 + 2200 + Math.random() * 3000; }
-          var lastLine = idx === lines.length - 1 && speaker === "joe";
-          var winking = lastLine && Math.sin(t * 1.3) > 0.6;
+          // One wink to camera once the last word is out.
+          var winking = after && ms > endMs + 250 && ms < endMs + 750;
           jWink.setAttribute("display", winking ? "inline" : "none");
           jEyes.setAttribute("display", winking ? "none" : "inline");
-          mouth(jMouth, jMouthO, joeTalks ? clamp((lastLoud - 0.1) / 0.6, 0, 1) : 0);
+          var shape = live && ms < lineEnd(idx, S, endMs) ? shapeAt(ms, idx, S, endMs) : "mid";
+          mouth(jMouth, jMouthO, joeTalks ? clamp((lastLoud - 0.1) / 0.6, 0, 1) : 0, shape);
 
           if (g) {
             var gt = guestTalks ? GUEST.talk : GUEST.rest;
@@ -354,7 +484,7 @@ const SITDOWN_JS = String.raw`
             var gtilt = guestTalks ? -4 + (lastLoud - 0.3) * 6 : -6 + Math.sin(t * 2.6) * (speaker === "joe" && line ? 2 : 0.5);
             g.head.setAttribute("transform", "translate(400 " + (226 + gb).toFixed(1) + ") rotate(" + gtilt.toFixed(1) + ")");
             g.eyes.setAttribute("transform", "translate(-3 0)" + (now < blinkUntil - 60 ? " translate(0 1.8) scale(1 .1)" : ""));
-            mouth(g.m, g.mo, guestTalks ? clamp((lastLoud - 0.1) / 0.6, 0, 1) : 0);
+            mouth(g.m, g.mo, guestTalks ? clamp((lastLoud - 0.1) / 0.6, 0, 1) : 0, shape);
           }
         }
       };
@@ -367,9 +497,18 @@ export function buildSitdownVideoHtml(data: SitdownVideoData): string {
   const title = esc(data.title || "A Sit-Down with Joe");
   const { lines, guest } = data.script;
   const durationMs = Math.max(5000, Math.round((data.durationSec || 60) * 1000));
+  const starts = data.startsMs && data.startsMs.length === lines.length ? data.startsMs : null;
+  const ends = starts && data.endsMs && data.endsMs.length === lines.length ? data.endsMs : null;
+  const lead = Math.max(0, Math.round(data.leadMs ?? 0));
   const payload = JSON.stringify({
-    lines: lines.map((l) => ({ speaker: l.speaker, name: l.name, text: l.text, gesture: l.gesture })),
-    starts: data.startsMs && data.startsMs.length === lines.length ? data.startsMs : null,
+    lines: lines.map((l, i) => {
+      const words = l.text.split(/\s+/).filter(Boolean);
+      const wt = starts && data.wordStartsMs?.length === lines.length && data.wordStartsMs[i]?.length === words.length ? data.wordStartsMs[i] : null;
+      return { speaker: l.speaker, name: l.name, text: l.text, gesture: l.gesture, words, groups: captionGroups(words), ...(wt ? { wt } : {}) };
+    }),
+    starts,
+    ends,
+    lead,
   }).replace(/</g, "\\u003c");
   const sub = guest ? `Joe sits down with ${esc(guest)}` : "A sit-down with Joe";
 
@@ -399,9 +538,16 @@ export function buildSitdownVideoHtml(data: SitdownVideoData): string {
   .sd-steam{animation:steam 1.6s ease-in-out infinite}
   @keyframes steam{50%{transform:translateY(-3px);opacity:.25}}
   .who{min-height:1.2em;margin-top:2vh;text-align:center;font:700 clamp(10px,1.5vh,14px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.22em;text-transform:uppercase;color:var(--gold)}
-  .cap{min-height:4.2em;padding:1vh 4% 0;text-align:center;font-style:italic;font-size:clamp(19px,3.1vh,34px);line-height:1.3}
-  .cap.in{animation:capin .35s ease both}
+  .cap{min-height:4.2em;padding:1vh 4% 0;text-align:center;font-style:italic;font-size:clamp(19px,3.1vh,34px);line-height:1.3;transition:opacity .3s}
+  .cap.out{opacity:0}
+  .cap.in{animation:capin .2s ease-out backwards}
   @keyframes capin{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .w{display:inline-block;color:rgba(246,236,218,.4);transition:color .1s,transform .14s}
+  .w.on{color:var(--ink)}
+  .w.now{color:var(--gold);transform:scale(1.06)}
+  .fade{position:fixed;inset:0;z-index:6;background:#000;opacity:0;pointer-events:none}
+  .frame{transition:opacity .8s ease}
+  .frame.out{opacity:0}
   .bar{height:4px;border-radius:99px;background:rgba(246,236,218,.14);overflow:hidden;margin-top:1.6vh}
   .bar i{display:block;height:100%;width:0;background:var(--gold)}
   .foot{margin-top:1.4vh;text-align:center;font:600 clamp(9px,1.3vh,12px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.24em;color:var(--dim);opacity:.7;text-transform:uppercase}
@@ -409,17 +555,19 @@ export function buildSitdownVideoHtml(data: SitdownVideoData): string {
   .tap{background:rgba(10,6,6,.55);cursor:pointer}
   .tap b{width:13vh;height:13vh;border-radius:50%;display:grid;place-items:center;font-size:5vh;background:radial-gradient(circle at 35% 30%,#7d343d,#4a1a20);border:1px solid rgba(211,168,95,.6);box-shadow:0 18px 50px rgba(0,0,0,.5)}
   .tap span{font:600 clamp(11px,1.6vh,15px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
-  .end{display:none;background:var(--bg)}
-  .end.on{display:flex;animation:fade .5s ease both}
+  .end{background:var(--bg);opacity:0;pointer-events:none;transition:opacity .8s ease}
+  .end.on{opacity:1}
+  .end h2,.end p{opacity:0;transform:translateY(1.2vh);transition:opacity .7s ease .25s,transform .9s cubic-bezier(.2,.8,.2,1) .25s}
+  .end p{transition-delay:.45s}
+  .end.on h2,.end.on p{opacity:1;transform:none}
   .end h2{font-size:clamp(28px,5vh,54px);line-height:1.05;padding:0 8%}
   .end p{font:600 clamp(11px,1.6vh,15px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}
-  @keyframes fade{from{opacity:0}to{opacity:1}}
   html.rec .tap{display:none}
   @media (prefers-reduced-motion:reduce){.sd-steam,.cap.in{animation:none}}
 </style>
 </head>
 <body>
-<main class="frame">
+<main class="frame" id="frame">
   <div class="eyebrow">Jobless Joe</div>
   <h1>${title}</h1>
   <div class="ep">${sub}</div>
@@ -433,26 +581,33 @@ export function buildSitdownVideoHtml(data: SitdownVideoData): string {
 </main>
 <div class="tap" id="tap" role="button" aria-label="Play"><b>▶</b><span>Tap to play</span></div>
 <div class="end" id="end"><h2>${title}</h2><p>Jobless Joe</p></div>
+<div class="fade" id="fade"></div>
 <audio id="a" preload="auto" src="${esc(data.audioFile)}"></audio>
 <script>${SITDOWN_JS}</script>
 <script>
 (function () {
   var RECORD = /[?&]record=1\\b/.test(location.search);
   if (RECORD) document.documentElement.classList.add("rec");
-  var END_MS = ${SITDOWN_END_MS};
+  var OUTRO_MS = ${SITDOWN_END_MS};
   var durMs = ${durationMs};
-  window.VESSEL = { recordDurationMs: durMs + END_MS, isInteractive: true, beatMs: 0 };
+  // When the last word is said: exact when the lines' ends are known, else the end of the audio.
+  var LAST_WORD = ${ends ? ends[ends.length - 1] : "null"};
+  function speechEnd() { return LAST_WORD == null ? durMs : Math.min(LAST_WORD, durMs); }
+  function totalMs() { return Math.max(durMs, speechEnd() + OUTRO_MS); }
+  window.VESSEL = { recordDurationMs: totalMs(), isInteractive: true, beatMs: 0 };
 
   var a = document.getElementById("a");
   var prog = document.getElementById("prog");
   var end = document.getElementById("end");
   var tap = document.getElementById("tap");
+  var frame = document.getElementById("frame");
+  var fade = document.getElementById("fade");
   var show = window.SitDown.mount(${payload}, a);
 
   a.addEventListener("loadedmetadata", function () {
     if (a.duration && isFinite(a.duration)) {
       durMs = Math.round(a.duration * 1000);
-      window.VESSEL.recordDurationMs = durMs + END_MS;
+      window.VESSEL.recordDurationMs = totalMs();
     }
   });
 
@@ -468,11 +623,16 @@ export function buildSitdownVideoHtml(data: SitdownVideoData): string {
   }
   function tick() {
     var ms = clock();
-    var playing = started && ms < durMs && (RECORD || !a.paused);
-    show.update(Math.min(ms, durMs), durMs, playing);
-    prog.style.width = (Math.min(1, ms / durMs) * 100).toFixed(2) + "%";
-    if (ms >= durMs) end.classList.add("on");
-    if (!started || ms < durMs + END_MS) requestAnimationFrame(tick);
+    var last = speechEnd(), total = totalMs();
+    var playing = started && ms < last && (RECORD || !a.paused);
+    show.update(Math.min(ms, total), last, playing, started);
+    prog.style.width = (Math.min(1, ms / last) * 100).toFixed(2) + "%";
+    // The close: the stage dissolves into the end card (a beat after the wink), which fades to black.
+    var over = started && ms > last + 900;
+    end.classList.toggle("on", over);
+    frame.classList.toggle("out", over);
+    fade.style.opacity = started ? Math.max(1 - ms / 500, Math.min(1, Math.max(0, (ms - (total - 700)) / 700))).toFixed(3) : "0";
+    if (!started || ms < total) requestAnimationFrame(tick);
   }
   function startShow() {
     if (started) return;
