@@ -13,6 +13,7 @@
  *      Sit-down with Joe video.
  */
 
+import { DEFAULT_MORNING_SETTINGS, morningAddendum, type MorningSettings } from "@/lib/morning-settings";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { DEFAULT_LANGUAGE, getLanguage } from "@/lib/languages";
 import { freshnessNote, recentShows, recordShow } from "@/lib/show-history";
@@ -237,7 +238,7 @@ For each post, in the order given:
 
 Around the segments:
 - Cold open: one or two lines that say the main topic in searchable words ("Good morning! Today: how to get a job when AI reads your resume first.").
-- A one-line transition between segments.
+- A one-line rehook between segments: a tease, twist or escalation that gives a reason to keep watching, never a plain "next up".
 - Sign-off: one line, the best laugh. A light nod to the bootcamp is fine; never a sales pitch.
 
 Rules:
@@ -362,10 +363,15 @@ ${lang.prompt}
 The script, questions, title, hook, summary, tags and hashtags are all in ${lang.label}. Turn any English search question into what ${lang.label} speakers would actually type. Posts or letters in English are retold in ${lang.label}. Keep the JSON keys and the performance tags ([pause], <whisper>…) in English.`;
 }
 
-/** Joe's search-led morning show about these posts. */
+/**
+ * Joe's search-led morning show about these posts, in the viral voice the
+ * settings ask for (punchy, hook first, looping ending by default; the
+ * autopilot gets the defaults).
+ */
 export async function writeMorningMonologue(
   posts: MorningPost[],
   language?: string,
+  settings: MorningSettings = DEFAULT_MORNING_SETTINGS,
 ): Promise<{
   title: string;
   script: string;
@@ -379,7 +385,7 @@ export async function writeMorningMonologue(
     recentShows("morning"),
   ]);
   const result = await chat(
-    MONOLOGUE_SYSTEM,
+    `${MONOLOGUE_SYSTEM}\n\n${morningAddendum(settings)}`,
     monologuePrompt(posts, searchQuestions) +
       freshnessNote(past, "posts") +
       showLanguageNote(language),

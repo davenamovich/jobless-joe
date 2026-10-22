@@ -20,6 +20,11 @@ import {
 import { getCroonerStyle } from "@/lib/crooner-styles";
 import { getLanguage } from "@/lib/languages";
 import { budgetFor, budgetBrief } from "@/lib/lyric-budget";
+import {
+  RETENTION_PROMPT,
+  scriptSkeletonBrief,
+  type VideoScriptBeat,
+} from "@/lib/retention-format";
 
 export type DurationKey = "15s" | "30s" | "60s" | "90s" | "120s";
 export type IntensityKey =
@@ -200,6 +205,16 @@ export interface SongOutput {
     aspectRatio: string;
   };
 
+  /**
+   * Beat-by-beat short-form script in the retention format (hook → lock-in →
+   * body → rehooks → CTA). Missing on episodes written before the format.
+   */
+  videoScript?: VideoScriptBeat[];
+  /** Post caption for TikTok / Reels / Shorts, ending in the CTA. */
+  socialCaption?: string;
+  /** A pinned first comment that carries the CTA. */
+  firstComment?: string;
+
   nextEpisodeTeaser: string;
   nextEpisodeTitle: string;
 
@@ -287,6 +302,8 @@ Write EVERY audience-facing field in ${lang.label}:
 - episodeTitle, lyrics, closingLine, hooks
 - adCopy: primaryTexts, headlines, description, cta
 - videoBrief: visualOpening, performanceShot, onScreenCaptions, sceneChanges, visualPunchline, finalFrame
+- videoScript: voiceover, caption, visual (section and timing stay as given)
+- socialCaption, firstComment
 - nextEpisodeTeaser, nextEpisodeTitle
 
 Keep these in English, always:
@@ -383,6 +400,8 @@ Make the writing serve the comedy in whatever style is selected:
 - Pop: extremely memorable hooks, simple language, repeatable phrases.
 
 ${languageBlock}
+
+${RETENTION_PROMPT}
 
 =========================
 THE VIRAL SONG FORMULA
@@ -580,6 +599,8 @@ B. Three alternative first-three-second hooks optimized to stop a social scroll.
 C. Facebook ad copy: 3 primary texts, 3 headlines, 1 short description, 1 natural CTA for Jobless Joe's Bootcamp.
 D. Video production brief: visual opening, suggested Joe performance shot, on-screen captions for funniest lines, scene changes, visual punchline, final frame featuring Jobless Joe's Bootcamp, suggested aspect ratio and caption-safe composition.
 E. Next-episode teaser line + suggested next episode title.
+F. A beat-by-beat short-form video script in THE RETENTION FORMAT (videoScript), with timing, voiceover, on-screen caption, visual and sound per beat, hooks and rehooks clearly carrying the attention.
+G. A social post caption (socialCaption) and a pinned first comment (firstComment), both ending in the aligned CTA.
 Production brief must be practical for AI-generated video workflows (9:16 vertical for Reels/Shorts, 1:1 for feed, caption-safe areas).
 
 =========================
@@ -621,6 +642,11 @@ The JSON must match this exact TypeScript type:
     "finalFrame": string,
     "aspectRatio": string
   },
+  "videoScript": [
+    { "section": "hook", "timing": string, "voiceover": string, "caption": string, "visual": string, "sound": string }
+  ],
+  "socialCaption": string,
+  "firstComment": string,
   "nextEpisodeTeaser": string,
   "nextEpisodeTitle": string,
   "storyBibleUpdate": {
@@ -654,6 +680,7 @@ Before you write the JSON, silently check:
 - Is there a strong payoff?
 - Does the ending create curiosity (not confusion)?
 - Does the bootcamp connection feel natural?
+- Does the video script follow the retention format: a scroll-stopping hook, a lock-in, two rehooks that each escalate, a payoff, and a CTA that follows from the content?
 - Is the content suitable for a public Facebook ad?
 
 If the song feels generic, predictable, or like an advertisement pretending to be a song, rewrite it before producing the JSON.
@@ -839,6 +866,7 @@ ${seasonBlock}
 Song duration: ${req.duration} (${duration?.words ?? "appropriate length"})
 LYRIC BUDGET (hard): ${budgetBrief(req.duration, duration?.label)}
 END THE SONG PROPERLY: the last line sung is the punchline, sized to land inside ${req.duration}.
+${scriptSkeletonBrief(req.duration)}
 Comedy intensity: ${req.intensity} — ${intensity?.hint ?? "Joe's signature ridiculous."}
 Primary target audience: ${targetLabel}
 Crooner style: ${style.label} — ${style.description} (Suggested tempo: ${style.bpm} BPM)
@@ -877,6 +905,7 @@ REMEMBER
 - Keep Joe's crooner voice unmistakable.
 - Stay in Joe's comedy universe: jobs, crypto regret, AI, the VC circus, money pain, the future, the bootcamp. Never a random-topic song.
 - Lead with a hook that stops a social scroll. Specific details, escalation, a twist, a quotable punchline.
+- Build the song and the videoScript on THE RETENTION FORMAT: hook, lock-in, body, rehook, body, rehook, payoff, aligned CTA.
 - Fresh material only: nothing from the recent songs listed under FRESHNESS.
 - Stay inside the lyric budget, and end on the punchline — the last line sung.${script ? "\n- Cover every beat of the script, in its order. Joe's wording, the user's content." : ""}
 - The storyBibleUpdate should reflect what genuinely changed in THIS episode.`;

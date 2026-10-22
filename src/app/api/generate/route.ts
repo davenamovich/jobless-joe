@@ -28,6 +28,7 @@ import { DEFAULT_LANGUAGE, isLanguageKey } from "@/lib/languages";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import { digestSong, freshnessBlock, pickAngle, type RecentSong } from "@/lib/freshness";
 import { cleanYouTubeSeo } from "@/lib/youtube-service";
+import { sanitizeVideoScript } from "@/lib/retention-format";
 import { seasonEpisodeFor } from "@/lib/season";
 import { loadArc } from "@/lib/ralph";
 import {
@@ -327,6 +328,9 @@ function sanitizeOutput(out: SongOutput): SongOutput {
       finalFrame: out.videoBrief?.finalFrame || "",
       aspectRatio: out.videoBrief?.aspectRatio || "9:16 vertical (caption-safe)",
     },
+    videoScript: sanitizeVideoScript(out.videoScript),
+    socialCaption: typeof out.socialCaption === "string" ? out.socialCaption : "",
+    firstComment: typeof out.firstComment === "string" ? out.firstComment : "",
     nextEpisodeTeaser: out.nextEpisodeTeaser || "",
     nextEpisodeTitle: out.nextEpisodeTitle || "The Next Chapter",
     youtube: cleanYouTubeSeo(out.youtube),

@@ -26,6 +26,7 @@ import {
   Video,
 } from "lucide-react";
 import { LyricsView } from "./LyricsView";
+import { RetentionScript } from "./RetentionScript";
 import { analyzeLyricFit } from "@/lib/lyric-budget";
 import type { SongOutput } from "@/lib/joe-prompts";
 import type { WallSummary } from "@/lib/walls";
@@ -85,9 +86,12 @@ export function OutputDisplay({
 
   return (
     <Tabs defaultValue="song" className="w-full">
-      <TabsList className="grid w-full grid-cols-3 md:grid-cols-5 h-auto">
+      <TabsList className="grid w-full grid-cols-3 md:grid-cols-6 h-auto">
         <TabsTrigger value="song" className="py-2">
           <Music className="h-3.5 w-3.5 mr-1.5" /> Song
+        </TabsTrigger>
+        <TabsTrigger value="script" className="py-2">
+          <Clapperboard className="h-3.5 w-3.5 mr-1.5" /> Script
         </TabsTrigger>
         <TabsTrigger value="hooks" className="py-2">
           <Sparkles className="h-3.5 w-3.5 mr-1.5" /> Hooks
@@ -234,6 +238,11 @@ export function OutputDisplay({
             />
           </CardContent>
         </Card>
+      </TabsContent>
+
+      {/* ======================= SHORT-FORM SCRIPT ======================= */}
+      <TabsContent value="script" className="mt-4 space-y-4">
+        <RetentionScript key={episodeId ?? output.episodeTitle} output={output} episodeId={episodeId} />
       </TabsContent>
 
       {/* ============================ HOOKS ============================ */}

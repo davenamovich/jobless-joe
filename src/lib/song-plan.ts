@@ -48,6 +48,7 @@ A good plan:
 - Never turns the song into a parody format (a weather report, a court case, a documentary): Joe sings about what happened to him.
 - Has a twist Joe earns: he uses AI in a concrete, believable way (writes, builds, automates something specific), or the situation flips on the people who doubted him.
 - Ends on a punchline that pays off the setup. The punchline must make sense to someone who only heard this song.
+- Follows the retention format: the first line is a scroll-stopping HOOK, the next lines LOCK IN the situation, each verse is a BODY beat, the chorus is a REHOOK that escalates, and the ending is the payoff.
 
 Reply with a single JSON object and nothing else:
 {
