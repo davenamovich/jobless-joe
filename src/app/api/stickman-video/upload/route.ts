@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { publishFiles } from "@/lib/herenow";
 import { audioDurationSec } from "@/lib/song-artifacts";
 import { planSongScenes } from "@/lib/stickman-scene-llm";
+import { shirtForSong } from "@/lib/joe-memes";
 import { buildStickmanVideoHtml } from "@/lib/stickman-video";
 import { UPLOAD_AUDIO_TYPES, songUploadText, uploadAudioFormat, uploadProblem } from "@/lib/song-upload";
 
@@ -44,9 +45,10 @@ export async function POST(req: NextRequest) {
   const audioPath = `song.${format}`;
 
   try {
-    const { scenes, source } = await planSongScenes(lyrics, title);
+    const [{ scenes, source }, shirt] = await Promise.all([planSongScenes(lyrics, title), shirtForSong({ title, lyrics })]);
     const html = buildStickmanVideoHtml({
       scenes,
+      shirt,
       title,
       episodeLabel: "Joe acts it out",
       lyrics,

@@ -10,6 +10,7 @@
  */
 
 import sharp from "sharp";
+import { designShirt, pickSlogan, type ShirtDesign } from "@/lib/stickman-shirt";
 import { chat, loadBackendConfig } from "@/lib/ai-backend";
 import {
   STICKMAN_EXPRESSIONS,
@@ -156,6 +157,12 @@ export async function writeMemes(src: MemeSource, n = 3): Promise<JoeMeme[]> {
     console.warn("[joe-memes] caption writer failed, using the song's own lines:", err instanceof Error ? err.message : err);
   }
   return fallbackMemes(src, n);
+}
+
+/** The tee Joe wears in a song's video: the song's own meme line on a title-coloured shirt. */
+export async function shirtForSong(src: MemeSource): Promise<ShirtDesign> {
+  const memes = await writeMemes(src, 3);
+  return designShirt(src.title || src.topic || "Jobless Joe", pickSlogan(memes.map((m) => m.bottom)));
 }
 
 // ── Rendering ───────────────────────────────────────────────────────────────

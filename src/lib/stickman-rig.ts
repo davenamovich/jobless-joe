@@ -30,6 +30,7 @@ import { POSES, beatStarts, type PoseDef, type StickmanBeat, type StickmanExpres
 import type { Scene } from "./stickman-scenes";
 import { VISEME_JS } from "./viseme";
 import { SCENE_CSS, SET_SVG, itemSvg, sceneLayout } from "./stickman-sets";
+import { shirtRigSvg, type ShirtDesign } from "./stickman-shirt";
 
 const GROUND = 392;
 const VIEW_W = 500;
@@ -234,7 +235,8 @@ export function buildRigData(beats: RigInput[], opts: { starts?: number[]; ends?
 }
 
 /** The skeleton the engine animates. Classes match the ink CSS. */
-export function rigSvg(tie: string): string {
+/** With a shirt, the tee takes the tie's place. */
+export function rigSvg(tie: string, shirt?: ShirtDesign): string {
   const el = (cls: string, d = 0) => `<path class="sm-ink ${cls}" pathLength="1" fill="none" style="--d:${d}ms"/>`;
   return `<svg class="sm-joe" viewBox="0 0 ${VIEW_W} ${VIEW_H}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
 <g class="sm-cam">
@@ -245,7 +247,7 @@ export function rigSvg(tie: string): string {
 <g class="sm-figwrap">
 <g class="sm-props"></g>
 ${el("sm-torso", 200)}
-<path class="sm-ink sm-thin sm-tie" pathLength="1" fill="${tie}" d="M-6 4 L6 4 L4 14 L9 54 L0 66 L-9 54 L-4 14 Z" style="--d:320ms"/>
+${shirt ? `<g class="sm-tie">${shirtRigSvg(shirt)}</g>` : `<path class="sm-ink sm-thin sm-tie" pathLength="1" fill="${tie}" d="M-6 4 L6 4 L4 14 L9 54 L0 66 L-9 54 L-4 14 Z" style="--d:320ms"/>`}
 ${el("sm-armL", 380)}${el("sm-armR", 440)}${el("sm-legL", 520)}${el("sm-legR", 580)}
 <g class="sm-head"><circle r="32" pathLength="1" fill="#fff" class="sm-ink sm-paper" style="--d:0ms"/><g class="sm-eyes"></g><g class="sm-wink" display="none"><circle cx="-11" cy="-5" r="3.6" class="sm-dot"/><path d="M5 -4 Q11 -11 17 -4" pathLength="1" fill="none" class="sm-ink sm-thin"/><path d="M5 -15 L17 -18" pathLength="1" fill="none" class="sm-ink sm-thin"/></g><path class="sm-ink sm-thin sm-mouth" pathLength="1" fill="none" style="--d:700ms"/></g>
 <g class="sm-handprops"></g>
@@ -621,11 +623,11 @@ export const STICKMAN_STAGE_CSS = `
 ${RIG_CSS}${SCENE_CSS}`;
 
 /** The stage: the live figure, the section label and the lyric caption, plus the rig data. */
-export function stickmanStageHtml(beats: RigInput[], tie: string, opts: { starts?: number[]; ends?: number[] } = {}): string {
+export function stickmanStageHtml(beats: RigInput[], tie: string, opts: { starts?: number[]; ends?: number[]; shirt?: ShirtDesign } = {}): string {
   if (beats.length === 0) return "";
   return `<section class="sm-stage" id="smStage" aria-label="Joe acts out the song">
   <span class="sm-sec" id="smSec">${escHtml(beats[0].section ?? "")}</span>
-  ${rigSvg(tie)}
+  ${rigSvg(tie, opts.shirt)}
   <p class="sm-line" id="smLine">${escHtml(beats[0].text)}</p>
   <script type="application/json" id="smData">${inlineJson(buildRigData(beats, opts))}</script>
 </section>`;

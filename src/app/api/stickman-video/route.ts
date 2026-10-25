@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { publishFiles } from "@/lib/herenow";
 import { audioDurationSec, loadSongArtifacts } from "@/lib/song-artifacts";
 import { planSongScenes } from "@/lib/stickman-scene-llm";
+import { shirtForSong } from "@/lib/joe-memes";
 import { buildStickmanVideoHtml } from "@/lib/stickman-video";
 import { lineStartsForPage } from "@/lib/song-timing";
 
@@ -28,9 +29,10 @@ export async function GET(req: NextRequest) {
   try {
     const song = await loadSongArtifacts(episodeId);
     const forceEstimate = new URL(req.url).searchParams.get("timing") === "estimate";
-    const { scenes } = await planSongScenes(song.lyrics, song.title);
+    const [{ scenes }, shirt] = await Promise.all([planSongScenes(song.lyrics, song.title), shirtForSong({ title: song.title, lyrics: song.lyrics })]);
     const html = buildStickmanVideoHtml({
       scenes,
+      shirt,
       title: song.title,
       episodeLabel: song.episodeLabel,
       lyrics: song.lyrics,
@@ -63,9 +65,10 @@ export async function POST(req: NextRequest) {
   try {
     const song = await loadSongArtifacts(body.episodeId);
     const audioPath = `song.${song.format}`;
-    const { scenes } = await planSongScenes(song.lyrics, song.title);
+    const [{ scenes }, shirt] = await Promise.all([planSongScenes(song.lyrics, song.title), shirtForSong({ title: song.title, lyrics: song.lyrics })]);
     const html = buildStickmanVideoHtml({
       scenes,
+      shirt,
       title: song.title,
       episodeLabel: song.episodeLabel,
       lyrics: song.lyrics,

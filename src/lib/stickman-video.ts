@@ -15,6 +15,7 @@
  */
 
 import { STICKMAN_STAGE_CSS, stickmanStageHtml, stickmanStageScript } from "./stickman-rig";
+import type { ShirtDesign } from "./stickman-shirt";
 import { keywordScenes, planTimeline, type Scene } from "./stickman-scenes";
 
 export interface StickmanVideoData {
@@ -29,6 +30,8 @@ export interface StickmanVideoData {
   durationSec: number;
   /** Measured start of each scene (0..1 of the song, from Whisper); used when it fits the scenes, else planTimeline's estimate. */
   lineStarts?: number[] | null;
+  /** The tee Joe wears for this song (stickman-shirt.ts); the tie when absent. */
+  shirt?: ShirtDesign;
 }
 
 /** A published here.now page (https, *.here.now) — the only pages we pay to film. */
@@ -61,6 +64,7 @@ export function buildStickmanVideoHtml(data: StickmanVideoData): string {
   const timeline = planTimeline(scenes, data.durationSec || 60);
   const stage = stickmanStageHtml(scenes, "#b8434f", {
     starts: data.lineStarts && data.lineStarts.length === scenes.length ? data.lineStarts : timeline.map((t) => t.at),
+    shirt: data.shirt,
   });
   const durationMs = Math.max(5000, Math.round((data.durationSec || 60) * 1000));
 
@@ -87,23 +91,29 @@ ${STICKMAN_STAGE_CSS}
   .sm-joe{max-height:52vh;overflow:hidden}
   .sm-line{font-style:italic;font-size:clamp(20px,3.3vh,36px);line-height:1.3;min-height:4.2em;padding:1.2vh 4% 0}
   .sm-sec{top:0;left:50%;transform:translateX(-50%)}
-  .bar{height:4px;border-radius:99px;background:rgba(246,236,218,.14);overflow:hidden;margin-top:2vh}
+  .bar{height:4px;border-radius:99px;background:rgba(246,236,218,.14);overflow:hidden;margin-top:2vh;transition:opacity .5s}
+  .bar.done{opacity:0}
+  .frame{transition:opacity .8s ease}
+  .frame.out{opacity:0}
+  .fade{position:fixed;inset:0;z-index:6;background:#000;opacity:0;pointer-events:none}
   .bar i{display:block;height:100%;width:0;background:var(--gold)}
   .foot{margin-top:1.4vh;text-align:center;font:600 clamp(9px,1.3vh,12px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.24em;color:var(--dim);opacity:.7;text-transform:uppercase}
   .tap,.end{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2vh;text-align:center;z-index:5}
   .tap{background:rgba(10,6,6,.55);cursor:pointer}
   .tap b{width:13vh;height:13vh;border-radius:50%;display:grid;place-items:center;font-size:5vh;background:radial-gradient(circle at 35% 30%,#7d343d,#4a1a20);border:1px solid rgba(211,168,95,.6);box-shadow:0 18px 50px rgba(0,0,0,.5)}
   .tap span{font:600 clamp(11px,1.6vh,15px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.2em;text-transform:uppercase;color:var(--gold)}
-  .end{display:none;background:var(--bg)}
-  .end.on{display:flex;animation:fade .5s ease both}
+  .end{background:var(--bg);opacity:0;pointer-events:none;transition:opacity .8s ease}
+  .end.on{opacity:1}
+  .end h2,.end p{opacity:0;transform:translateY(1.2vh);transition:opacity .7s ease .25s,transform .9s cubic-bezier(.2,.8,.2,1) .25s}
+  .end p{transition-delay:.45s}
+  .end.on h2,.end.on p{opacity:1;transform:none}
   .end h2{font-size:clamp(28px,5vh,54px);line-height:1.05;padding:0 8%}
   .end p{font:600 clamp(11px,1.6vh,15px)/1 ui-sans-serif,system-ui,sans-serif;letter-spacing:.24em;text-transform:uppercase;color:var(--gold)}
-  @keyframes fade{from{opacity:0}to{opacity:1}}
   html.rec .tap{display:none}
 </style>
 </head>
 <body>
-<main class="frame">
+<main class="frame" id="frame">
   <div class="eyebrow">Jobless Joe</div>
   <h1>${title}</h1>
   <div class="ep">${label}</div>
@@ -113,6 +123,7 @@ ${STICKMAN_STAGE_CSS}
 </main>
 <div class="tap" id="tap" role="button" aria-label="Play"><b>▶</b><span>Tap to play</span></div>
 <div class="end" id="end"><h2>${title}</h2><p>Jobless Joe</p></div>
+<div class="fade" id="fade"></div>
 <audio id="a" preload="auto" src="${esc(data.audioFile)}"></audio>
 ${stickmanStageScript("a", { external: true })}
 <script>
@@ -127,6 +138,9 @@ ${stickmanStageScript("a", { external: true })}
   var prog = document.getElementById("prog");
   var end = document.getElementById("end");
   var tap = document.getElementById("tap");
+  var frame = document.getElementById("frame");
+  var fade = document.getElementById("fade");
+  var bar = prog.parentNode;
   var stage = window.joeStage;
 
   // The real length, once the browser has read it.
@@ -154,7 +168,12 @@ ${stickmanStageScript("a", { external: true })}
     var playing = started && ms < durMs && (RECORD || !a.paused);
     if (stage) stage.update(Math.min(ms, durMs), durMs, playing);
     prog.style.width = (Math.min(1, ms / durMs) * 100).toFixed(2) + "%";
-    if (ms >= durMs) end.classList.add("on");
+    // The close: the stage dissolves into the end card, which fades to black.
+    var over = started && ms >= durMs;
+    end.classList.toggle("on", over);
+    frame.classList.toggle("out", over);
+    bar.classList.toggle("done", over);
+    fade.style.opacity = started ? Math.max(1 - ms / 500, Math.min(1, Math.max(0, (ms - (durMs + END_MS - 600)) / 600))).toFixed(3) : "0";
     if (!started || ms < durMs + END_MS) requestAnimationFrame(tick);
   }
   function startShow() {
